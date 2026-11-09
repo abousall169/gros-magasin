@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-09T02:38:28.581Z",
+  "title": "Design System: Caisse gros & détail",
+  "extensions": {
+    "colorMeta": {
+      "rail-indigo": {
+        "role": "primary",
+        "displayName": "Indigo du rail",
+        "canonical": "oklch(26.2% 0.096 -87.8)",
+        "tonalRamp": [
+          "#050821",
+          "#1b2249",
+          "#354075",
+          "#53629d",
+          "#7585c4",
+          "#9babe4",
+          "#c1cffe",
+          "#e2edff"
+        ]
+      },
+      "saffron": {
+        "role": "secondary",
+        "displayName": "Safran (Détail)",
+        "canonical": "oklch(77.2% 0.161 74.7)",
+        "tonalRamp": [
+          "#1f0100",
+          "#461600",
+          "#723100",
+          "#9a5200",
+          "#c17700",
+          "#e29f32",
+          "#fdc679",
+          "#ffe6aa"
+        ]
+      },
+      "saffron-data": {
+        "role": "secondary",
+        "displayName": "Safran des graphiques",
+        "canonical": "oklch(69.4% 0.148 72.3)",
+        "tonalRamp": [
+          "#1e0100",
+          "#451700",
+          "#703200",
+          "#985300",
+          "#bf7700",
+          "#e09f44",
+          "#fcc682",
+          "#ffe6b1"
+        ]
+      },
+      "gros-indigo": {
+        "role": "tertiary",
+        "displayName": "Indigo vif (Gros)",
+        "canonical": "oklch(45.2% 0.203 -89.8)",
+        "tonalRamp": [
+          "#04003a",
+          "#11106f",
+          "#242ea9",
+          "#3d53d8",
+          "#5c7aff",
+          "#83a4ff",
+          "#adcbff",
+          "#d1ebff"
+        ]
+      },
+      "vermilion": {
+        "role": "status",
+        "displayName": "Vermillon (crédit, alerte)",
+        "canonical": "oklch(57.3% 0.194 32.9)",
+        "tonalRamp": [
+          "#2b0000",
+          "#5a0000",
+          "#8e0000",
+          "#bc1f00",
+          "#e64d30",
+          "#ff7f64",
+          "#ffae96",
+          "#ffd4c0"
+        ]
+      },
+      "emerald": {
+        "role": "status",
+        "displayName": "Émeraude (payé)",
+        "canonical": "oklch(51.3% 0.110 161.2)",
+        "tonalRamp": [
+          "#001204",
+          "#003218",
+          "#005532",
+          "#0a7951",
+          "#3f9e73",
+          "#73c19a",
+          "#a3e1c1",
+          "#cbfce1"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Fond indigo pâle",
+        "canonical": "oklch(96.5% 0.007 -82.8)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#262629",
+          "#444548",
+          "#65666a",
+          "#88898d",
+          "#adaeb2",
+          "#d0d1d4",
+          "#eeeef1"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panneau blanc",
+        "canonical": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#262626",
+          "#454545",
+          "#666666",
+          "#898989",
+          "#aeaeae",
+          "#d1d1d1",
+          "#eeeeee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Encre",
+        "canonical": "oklch(22.0% 0.051 -85.1)",
+        "tonalRamp": [
+          "#080a17",
+          "#212539",
+          "#3d435f",
+          "#5d6484",
+          "#8087a9",
+          "#a5accb",
+          "#cad0e9",
+          "#e8eeff"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Encre secondaire",
+        "canonical": "oklch(42.4% 0.052 -84.5)",
+        "tonalRamp": [
+          "#080a17",
+          "#21253a",
+          "#3d4360",
+          "#5d6484",
+          "#8087a9",
+          "#a5accc",
+          "#cad0ea",
+          "#e9edff"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Filet",
+        "canonical": "oklch(89.6% 0.017 -85.2)",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#24262d",
+          "#42454e",
+          "#636670",
+          "#868994",
+          "#abadb7",
+          "#ced1d9",
+          "#eceef5"
+        ]
+      },
+      "chart-bar": {
+        "role": "data",
+        "displayName": "Barre des jours passés",
+        "canonical": "oklch(66.1% 0.128 -83.2)",
+        "tonalRamp": [
+          "#060428",
+          "#1d1e54",
+          "#373b84",
+          "#555cae",
+          "#7680d5",
+          "#9ca7f5",
+          "#c1ccff",
+          "#e1ebff"
+        ]
+      },
+      "chart-today": {
+        "role": "data",
+        "displayName": "Barre d'aujourd'hui",
+        "canonical": "oklch(45.1% 0.143 -86.1)",
+        "tonalRamp": [
+          "#05032c",
+          "#191d59",
+          "#313a8b",
+          "#4e5cb6",
+          "#6f80df",
+          "#95a7fd",
+          "#bccdff",
+          "#ddecff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "hero": {
+        "displayName": "Chiffre phare",
+        "purpose": "Une seule fois par vue : recette du jour, chiffre d’affaires de la période."
+      },
+      "total": {
+        "displayName": "Total du panier",
+        "purpose": "Total à encaisser, monnaie à rendre, solde client."
+      },
+      "title": {
+        "displayName": "Titre de page",
+        "purpose": "Nom de la page (masqué sur téléphone, où la barre haute le porte)."
+      },
+      "heading": {
+        "displayName": "Titre de panneau",
+        "purpose": "Panneaux, feuilles, bande du panier."
+      },
+      "body": {
+        "displayName": "Texte",
+        "purpose": "Texte courant, champs de saisie (16 px : pas de zoom iOS)."
+      },
+      "label": {
+        "displayName": "Libellé",
+        "purpose": "Libellés de champs, boutons, puces, cellules de tableau."
+      },
+      "caption": {
+        "displayName": "Légende",
+        "purpose": "Sous-lignes, unités, en-têtes de tableau, pastilles."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sheet",
+        "value": "0 18px 48px rgba(20, 24, 50, 0.22), 0 2px 6px rgba(20, 24, 50, 0.12)",
+        "purpose": "Feuilles (dialogues) : seul niveau qui flotte au-dessus de la page."
+      },
+      {
+        "name": "floating",
+        "value": "0 10px 28px rgba(14, 17, 40, 0.28)",
+        "purpose": "Barre panier du téléphone et notifications."
+      },
+      {
+        "name": "segment-on",
+        "value": "0 1px 2px rgba(20, 24, 50, 0.16)",
+        "purpose": "Segment actif d’un contrôle segmenté."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Apparition des feuilles, changement de teinte du mode."
+      },
+      {
+        "name": "colorway",
+        "value": "200ms",
+        "purpose": "Bascule Détail / Gros : la bande, le bouton Encaisser et la barre panier changent de teinte."
+      },
+      {
+        "name": "feedback",
+        "value": "150ms",
+        "purpose": "Survol, appui, focus."
+      },
+      {
+        "name": "tile-flash",
+        "value": "450ms",
+        "purpose": "Produit ajouté : anneau à la teinte du mode qui s’efface."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tablet",
+        "value": "1180px",
+        "purpose": "Rail réduit (icône + libellé court), panier 344 px."
+      },
+      {
+        "name": "phone",
+        "value": "760px",
+        "purpose": "Barre haute + onglets en bas ; panier et encaissement en plein écran."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Bouton principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Enregistrer, valider un formulaire, actions hors caisse. Jamais aux couleurs du mode.",
+      "html": "<button class=\"ds-btn-primary\">Enregistrer</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--rail, #161d52);background:var(--rail, #161d52);color:#fff;font:600 0.875rem system-ui,sans-serif;transition:background-color .15s,transform .08s;cursor:pointer}.ds-btn-primary:hover{background:#0f1540}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #141832}"
+    },
+    {
+      "name": "Bouton Encaisser (teinte du mode)",
+      "kind": "button",
+      "refersTo": "button-mode-retail",
+      "description": "Action principale de la caisse ; prend la teinte du mode de vente (safran = détail, indigo vif = gros).",
+      "html": "<div style=\"display:flex;gap:8px\"><button class=\"ds-btn-mode ds-retail\">Encaisser</button><button class=\"ds-btn-mode ds-wholesale\">Encaisser</button></div>",
+      "css": ".ds-btn-mode{min-height:56px;padding:0 24px;border-radius:12px;border:0;font:600 1rem system-ui,sans-serif;cursor:pointer;transition:background-color .2s cubic-bezier(.22,1,.36,1),filter .15s}.ds-btn-mode:hover{filter:brightness(.96)}.ds-btn-mode:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #141832}.ds-retail{background:var(--detail, #f0a30a);color:#141832}.ds-wholesale{background:var(--gros, #3040c4);color:#fff}"
+    },
+    {
+      "name": "Bascule Détail / Gros",
+      "kind": "custom",
+      "refersTo": "mode-switch",
+      "description": "Signature : choisir le régime de prix. Hors de la bande, le segment actif prend la teinte du mode ; dans la bande, il devient blanc.",
+      "html": "<div class=\"ds-mode\"><button class=\"ds-on-retail\">Détail</button><button>Gros</button></div>",
+      "css": ".ds-mode{display:inline-flex;padding:3px;border-radius:999px;background:rgba(20,24,50,.08);gap:2px}.ds-mode button{min-height:40px;min-width:84px;padding:0 16px;border:0;border-radius:999px;background:transparent;color:#464c6b;font:800 .875rem system-ui,sans-serif;cursor:pointer;transition:background-color .2s,color .2s}.ds-mode button:hover{color:#141832}.ds-mode .ds-on-retail{background:var(--detail, #f0a30a);color:#141832}.ds-mode button:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #141832}"
+    },
+    {
+      "name": "Bande du panier",
+      "kind": "custom",
+      "refersTo": "cart-band-wholesale",
+      "description": "En-tête du panier en aplat de la teinte du mode : titre « Vente en gros · 3 articles », bascule, client.",
+      "html": "<div class=\"ds-band\"><h2>Vente en gros <span>· 3 articles</span></h2><div class=\"ds-client\"><small>Client</small><strong>Client comptoir</strong></div></div>",
+      "css": ".ds-band{background:var(--gros, #3040c4);color:#fff;padding:12px 16px;display:flex;flex-direction:column;gap:12px;font-family:system-ui,sans-serif;width:320px}.ds-band h2{margin:0;font-size:1.1875rem;font-weight:700}.ds-band h2 span{font-size:.875rem;font-weight:600;color:rgba(255,255,255,.78)}.ds-client{background:#fff;color:#141832;border-radius:8px;padding:6px 12px}.ds-client small{display:block;font-size:.75rem;color:#5f6587}.ds-client strong{font-size:.875rem}"
+    },
+    {
+      "name": "Tuile produit",
+      "kind": "card",
+      "refersTo": "tile",
+      "description": "Produit en caisse : nom, prix détail et prix gros (marqueur carré de la teinte), stock en colis + unités.",
+      "html": "<button class=\"ds-tile\"><span class=\"ds-n\">Huile végétale 1 L</span><span class=\"ds-p\"><i class=\"ds-k ds-r\"></i><b>1 300</b> / bouteille</span><span class=\"ds-p\"><i class=\"ds-k ds-w\"></i><b>14 400</b> / carton</span><span class=\"ds-s\">20 cartons</span></button>",
+      "css": ".ds-tile{display:flex;flex-direction:column;gap:4px;width:200px;min-height:136px;padding:12px 16px;border:0;border-radius:12px;background:#fff;text-align:left;font-family:system-ui,sans-serif;cursor:pointer;transition:box-shadow .15s}.ds-tile:hover{box-shadow:0 0 0 1px #b9bed2}.ds-tile:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #141832}.ds-n{font-weight:700;font-size:.875rem;color:#141832;min-height:2.5em}.ds-p{display:flex;align-items:baseline;gap:6px;font-size:.75rem;color:#5f6587;font-variant-numeric:tabular-nums}.ds-p b{font-size:.875rem;color:#464c6b}.ds-k{width:8px;height:8px;border-radius:2px;align-self:center}.ds-r{background:#f0a30a}.ds-w{background:#3040c4}.ds-s{font-size:.75rem;color:#5f6587;margin-top:4px}"
+    },
+    {
+      "name": "Puce de filtre",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Rayons, périodes, filtres. Active : encre pleine.",
+      "html": "<div style=\"display:flex;gap:8px\"><button class=\"ds-chip ds-chip-on\">Tous</button><button class=\"ds-chip\">Boissons</button></div>",
+      "css": ".ds-chip{min-height:36px;padding:0 14px;border-radius:999px;border:1px solid #b9bed2;background:#fff;color:#464c6b;font:600 .875rem system-ui,sans-serif;cursor:pointer}.ds-chip:hover{border-color:#5f6587}.ds-chip-on{background:#141832;border-color:#141832;color:#fff}.ds-chip:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #141832}"
+    },
+    {
+      "name": "Champ de recherche",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Recherche produit (accepte la douchette code-barres + Entrée).",
+      "html": "<label class=\"ds-search\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.85\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg><input placeholder=\"Produit ou code-barres…\"></label>",
+      "css": ".ds-search{position:relative;display:flex;align-items:center;width:320px;color:#5f6587}.ds-search svg{position:absolute;left:12px}.ds-search input{width:100%;min-height:52px;padding:10px 12px 10px 40px;border:1px solid #b9bed2;border-radius:12px;background:#fff;color:#141832;font:1rem system-ui,sans-serif}.ds-search input:focus{outline:none;border-color:#141832;box-shadow:0 0 0 3px rgba(20,24,50,.12)}"
+    },
+    {
+      "name": "Pastilles d’état",
+      "kind": "chip",
+      "refersTo": "badge-credit",
+      "description": "Doit / Payée / Rupture / Détail / Gros : fond pâle + encre foncée de la même teinte, toujours avec un mot.",
+      "html": "<div style=\"display:flex;gap:6px;flex-wrap:wrap\"><span class=\"ds-b ds-cr\">Doit 43 150 FCFA</span><span class=\"ds-b ds-pd\">Payée</span><span class=\"ds-b ds-rt\">Détail</span><span class=\"ds-b ds-ws\">Gros</span><span class=\"ds-b ds-out\">Rupture</span></div>",
+      "css": ".ds-b{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border-radius:999px;font:700 .75rem system-ui,sans-serif}.ds-cr{background:#fde7e2;color:#ad2e13}.ds-pd{background:#ddf3e9;color:#0a6544}.ds-rt{background:#fff1d3;color:#845600}.ds-ws{background:#e6e9fc;color:#2b39b2}.ds-out{background:#d2391b;color:#fff}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Les coloris du pagne",
+    "overview": "Une caisse de magasin qui parle par aplats de couleur, comme un pagne wax : un rail indigo profond, un fond pâle, des panneaux blancs, et deux teintes réservées au régime de prix. Quand le vendeur passe en gros, toute la caisse prend l’indigo vif ; au détail, le safran. Personne ne vend au mauvais prix sans le voir.\n\nC’est un outil de travail : polices système, composants familiers, densité confortable, chiffres lourds et alignés. La personnalité tient dans la couleur et dans ce geste, pas dans l’ornement : aucun motif, aucune texture, aucune décoration.",
+    "keyCharacteristics": [
+      "Rail indigo profond, fond indigo très pâle, panneaux blancs séparés par la couleur plutôt que par des bordures.",
+      "Safran = Détail, indigo vif = Gros : bande du panier, bouton Encaisser, barre panier, pastilles de ligne.",
+      "Vermillon pour crédit, dettes, ruptures ; émeraude pour payé et caisse juste.",
+      "Police système, chiffres tabulaires dans les colonnes, grand chiffre proportionnel pour le chiffre phare.",
+      "Cibles tactiles de 44 px et plus ; panier et encaissement en plein écran sur téléphone."
+    ],
+    "rules": [
+      {
+        "name": "The Colorway Rule",
+        "body": "Le safran et l’indigo vif appartiennent au mode de vente : bande du panier, bouton Encaisser, barre panier, pastilles Détail / Gros, marqueurs de prix et données gros / détail. Jamais en décoration ailleurs.",
+        "section": "colors"
+      },
+      {
+        "name": "The Field Rule",
+        "body": "Les zones se séparent par des aplats (rail, fond, panneau blanc, bande de mode), pas par des bordures ni des ombres. Les filets restent à l’intérieur des listes et des tableaux.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ledger Numerals Rule",
+        "body": "Montants et quantités en colonnes : chiffres tabulaires alignés à droite. Le chiffre phare, seul, garde des chiffres proportionnels.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Ladder Rule",
+        "body": "Une seule échelle d’élévation : rail, fond, panneau, feuille. Seuls les feuilles, notifications et la barre panier du téléphone portent une ombre.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Phone Owns the Screen Rule",
+        "body": "Sur téléphone, panier et encaissement occupent tout l’écran ; rien ne rivalise avec le montant à payer.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do donner la teinte du mode à tout ce qui dépend du prix (bande, bouton Encaisser, barre panier, pastille de ligne).",
+      "Do écrire les montants avec le séparateur de milliers et la devise : « 43 150 FCFA ».",
+      "Do accompagner chaque couleur d’état d’un mot (Doit, Payée, Rupture).",
+      "Do garder les libellés du commerce : carton, sac, versement, crédit, réception."
+    ],
+    "donts": [
+      "Don’t utiliser le safran ou l’indigo vif pour décorer un titre, une icône ou un graphique sans rapport avec gros / détail.",
+      "Don’t poser de sur-titre en petites capitales au-dessus d’un titre.",
+      "Don’t ajouter de motif wax, de texture ou de dégradé : le monde tient dans les aplats.",
+      "Don’t afficher un prix d’achat ou une marge à un vendeur."
+    ]
+  }
+}
