@@ -2871,3 +2871,291 @@ body.locked {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==========================================================================
+   Caméra, photos, hors ligne, étiquettes, langues (arabe de droite à gauche)
+   ========================================================================== */
+.linklike {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+label.btn {
+  cursor: pointer;
+}
+.btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.push-start {
+  margin-inline-end: auto;
+}
+[dir='rtl'] .flip-rtl {
+  transform: scaleX(-1);
+}
+
+/* Ventes en attente d'envoi (hors ligne) */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 32px;
+  padding: 0 var(--s3);
+  border: 0;
+  border-radius: 999px;
+  background: var(--detail-soft);
+  color: var(--detail-ink);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  text-align: start;
+}
+.sync-pill.bad {
+  background: var(--credit);
+  color: #fff;
+}
+.rail .sync-pill {
+  margin: 0 var(--s1);
+}
+.topbar .lang-btn {
+  width: auto;
+  min-width: 44px;
+  padding: 0 var(--s2);
+  font-weight: 700;
+  font-size: var(--t-sm);
+  color: inherit;
+}
+
+/* Choix de la langue à la connexion */
+.lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin-top: var(--s3);
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.lang-switch button {
+  min-height: 32px;
+  padding: 0 var(--s3);
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--rail-muted);
+  font-weight: 600;
+  font-size: var(--t-sm);
+}
+.lang-switch button.on {
+  background: var(--rail-ink);
+  color: var(--rail);
+}
+
+/* Caisse : boutons caméra à côté de la recherche */
+.pos-head .search-row .cam-btn {
+  min-height: 52px;
+  padding: 0 var(--s3);
+  flex: none;
+}
+
+/* Scanner de codes-barres */
+.scanner {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: #000;
+}
+.scanner video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.scanner i {
+  position: absolute;
+  inset: 30% 10%;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: var(--r-sm);
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.35);
+}
+
+/* Photos de référence et reconnaissance */
+.photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.photo-cell {
+  position: relative;
+}
+.photo-thumb {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--r-md);
+  object-fit: cover;
+  display: block;
+  background: var(--sunk);
+}
+.photo-thumb.lg {
+  width: 96px;
+  height: 96px;
+  flex: none;
+}
+.photo-wait {
+  display: grid;
+  place-items: center;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+.photo-remove {
+  position: absolute;
+  top: -8px;
+  inset-inline-end: -8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--credit);
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+.photo-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: var(--s2);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.list-row.best {
+  background: var(--paid-soft);
+}
+.progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--sunk);
+  overflow: hidden;
+}
+.progress-bar i {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--rail);
+  animation: progress 1.2s ease-in-out infinite;
+}
+@keyframes progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* Vente gardée sur l'appareil (hors ligne) */
+.done .tick.offline {
+  background: var(--detail);
+  color: var(--ink);
+}
+.cart-foot .warn-row {
+  color: var(--credit-ink);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+/* Étiquettes A4 (impression) et aperçu */
+.label-preview {
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fff;
+}
+.sticker,
+.label-preview .sticker {
+  box-sizing: border-box;
+  padding: 1.2mm 1.5mm;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: center;
+  background: #fff;
+  color: #000;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans Arabic', Arial, sans-serif;
+}
+.sticker.cut {
+  outline: 0.2mm dashed #aaa;
+  outline-offset: -0.1mm;
+}
+.sticker .sticker-code svg {
+  width: 100%;
+  height: 100%;
+}
+.sticker .sticker-code {
+  display: flex;
+  justify-content: center;
+}
+.label-sheet {
+  width: 210mm;
+  height: 297mm;
+  padding: 5mm;
+  box-sizing: border-box;
+  display: grid;
+}
+
+/* Arabe : de droite à gauche */
+[dir='rtl'] body {
+  font-family: 'Noto Sans Arabic', 'Segoe UI', Tahoma, system-ui, sans-serif;
+}
+[dir='rtl'] .rail .btn-rail {
+  text-align: right;
+}
+[dir='rtl'] .nav a .count {
+  margin-left: 0;
+  margin-right: auto;
+}
+[dir='rtl'] .rcpt td.r,
+[dir='rtl'] .table td.num,
+[dir='rtl'] .table th.num {
+  text-align: left;
+}
+[dir='rtl'] .rcpt .item-sub {
+  padding-left: 0;
+  padding-right: 6px;
+}
+[dir='rtl'] .input.num {
+  text-align: left;
+}
+@media (max-width: 760px) {
+  [dir='rtl'] .topbar {
+    padding: 0 var(--s4) 0 var(--s2);
+  }
+  [dir='rtl'] .topbar h1 {
+    margin-right: 0;
+    margin-left: auto;
+  }
+}
+@media (max-width: 760px) {
+  /* Téléphone : recherche + caméra sur une ligne, bascule Détail / Gros pleine largeur en dessous */
+  .pos-head .search-row {
+    flex-wrap: wrap;
+  }
+  .pos-head .search-row .input-affix {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .pos-head .search-row .cam-btn {
+    min-height: 48px;
+    padding: 0 var(--s3);
+  }
+  .pos-head .search-row .mode-switch.hide-desktop-cart {
+    order: 5;
+    flex: 1 1 100%;
+  }
+  .pos-head .search-row .mode-switch.hide-desktop-cart button {
+    flex: 1;
+  }
+}

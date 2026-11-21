@@ -2,8 +2,8 @@
 import { Router } from 'express';
 import { q, tx } from '../db.js';
 import { requirePerm } from '../auth.js';
-import { PRODUCT_SELECT, publicProduct, recordMovement } from '../services.js';
-import { bad, notFound, str, num, int, bool, round2, round3, round4, nowLocal } from '../util.js';
+import { PRODUCT_SELECT, publicProduct, recordMovement, addLot, consumeLots, syncExpiry } from '../services.js';
+import { bad, notFound, str, num, int, bool, round2, round3, round4, nowLocal, isDay } from '../util.js';
 import { toCSV, sendCSV, parseCSV, normHeader } from '../csv.js';
 import { broadcast } from '../events.js';
 
@@ -100,9 +100,19 @@ function productInput(b) {
   let categoryIdValue = null;
   if (b.category_id) categoryIdValue = int(b.category_id);
   else if (b.category_name) categoryIdValue = categoryId(b.category_name);
+  let taxRate = null;
+  if (b.tax_rate !== undefined && b.tax_rate !== null && String(b.tax_rate).trim() !== '') {
+    taxRate = num(b.tax_rate);
+    if (!(taxRate >= 0 && taxRate <= 100)) bad('Taux de TVA invalide (entre 0 et 100).');
+  }
+  const expiry = str(b.expiry_date, 10);
+  if (expiry && !isDay(expiry)) bad('Date de péremption invalide.');
   return {
     name,
-    barcode: str(b.barcode, 64),
+    name_ar: str(b.name_ar, 120),
+    tax_rate: taxRate,
+    expiry_date: expiry,
+    barcode: normalizeCode(str(b.barcode, 64)),
     category_id: categoryIdValue,
     unit,
     retail_price: retail,
@@ -124,9 +134,11 @@ function checkBarcode(barcode, id = 0) {
 function insertProduct(d, user, initialStock = 0) {
   const now = nowLocal();
   const p = q.run(
-    `INSERT INTO products (name, barcode, category_id, unit, retail_price, pack_unit, pack_size, wholesale_price, cost_price, min_stock, active, stock, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+    `INSERT INTO products (name, name_ar, barcode, category_id, unit, retail_price, pack_unit, pack_size, wholesale_price, cost_price,
+                           min_stock, active, tax_rate, expiry_date, stock, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     d.name,
+    d.name_ar,
     d.barcode,
     d.category_id,
     d.unit,
@@ -137,21 +149,38 @@ function insertProduct(d, user, initialStock = 0) {
     d.cost_price,
     d.min_stock,
     d.active,
+    d.tax_rate,
+    d.expiry_date,
     now,
     now,
   );
   if (initialStock > 0) {
     recordMovement({ productId: p.id, type: 'initial', qty: initialStock, reason: 'Stock initial', userId: user.id, at: now });
+    if (d.expiry_date) addLot(p.id, { qty: initialStock, expiry: d.expiry_date, source: 'Stock initial', at: now });
   }
   return p.id;
 }
 
+/** La date saisie sur la fiche s'applique au lot unique ; avec plusieurs lots, elle est calculée. */
+function applyExpiry(id, date) {
+  const lots = q.all('SELECT id FROM stock_lots WHERE product_id = ? AND qty > 0', id);
+  if (lots.length === 1) {
+    q.run('UPDATE stock_lots SET expiry_date = ? WHERE id = ?', date, lots[0].id);
+  } else if (!lots.length) {
+    const stock = q.val('SELECT stock FROM products WHERE id = ?', id);
+    if (date && stock > 0) addLot(id, { qty: stock, expiry: date, source: 'Fiche produit' });
+    return;
+  }
+  syncExpiry(id);
+}
+
 function updateProduct(id, d) {
   q.run(
-    `UPDATE products SET name = ?, barcode = ?, category_id = ?, unit = ?, retail_price = ?, pack_unit = ?, pack_size = ?,
-            wholesale_price = ?, cost_price = ?, min_stock = ?, active = ?, updated_at = ?
+    `UPDATE products SET name = ?, name_ar = ?, barcode = ?, category_id = ?, unit = ?, retail_price = ?, pack_unit = ?, pack_size = ?,
+            wholesale_price = ?, cost_price = ?, min_stock = ?, active = ?, tax_rate = ?, expiry_date = ?, updated_at = ?
       WHERE id = ?`,
     d.name,
+    d.name_ar,
     d.barcode,
     d.category_id,
     d.unit,
@@ -162,6 +191,8 @@ function updateProduct(id, d) {
     d.cost_price,
     d.min_stock,
     d.active,
+    d.tax_rate,
+    d.expiry_date,
     nowLocal(),
     id,
   );
@@ -190,7 +221,113 @@ r.put('/products/:id', requirePerm('products.manage'), (req, res) => {
   tx(() => {
     checkBarcode(d.barcode, id);
     updateProduct(id, d);
+    if ((d.expiry_date || null) !== (existing.expiry_date || null)) applyExpiry(id, d.expiry_date);
   });
+  broadcast('products');
+  res.json({ ok: true });
+});
+
+// ---- Codes-barres internes (produits sans code) -----------------------------------
+// EAN-13 « usage magasin » : préfixe 20 (réservé par GS1 aux codes internes) + n° du produit + clé.
+// Même calcul que public/js/barcode.js (internalEan13).
+export function internalEan13(id) {
+  const body = `20${String(id).padStart(10, '0')}`;
+  let total = 0;
+  for (let i = 0; i < 12; i++) total += Number(body[i]) * (i % 2 === 0 ? 1 : 3);
+  return body + ((10 - (total % 10)) % 10);
+}
+
+/** Un UPC-A (12 chiffres) est un EAN-13 qui commence par 0 : on garde toujours la forme à 13 chiffres. */
+export function normalizeCode(code) {
+  if (!code) return code;
+  return /^\d{12}$/.test(code) ? `0${code}` : code;
+}
+
+r.post('/products/assign-barcodes', requirePerm('products.manage'), (req, res) => {
+  const ids = tx(() => {
+    const rows = q.all("SELECT id FROM products WHERE active = 1 AND (barcode IS NULL OR barcode = '')");
+    const done = [];
+    for (const { id } of rows) {
+      const code = internalEan13(id);
+      if (q.get('SELECT id FROM products WHERE barcode = ?', code)) continue;
+      q.run('UPDATE products SET barcode = ?, updated_at = ? WHERE id = ?', code, nowLocal(), id);
+      done.push(id);
+    }
+    return done;
+  });
+  if (ids.length) broadcast('products');
+  res.json({ assigned: ids.length });
+});
+
+r.post('/products/:id/barcode', requirePerm('products.manage'), (req, res) => {
+  const id = int(req.params.id);
+  const p = q.get('SELECT * FROM products WHERE id = ?', id);
+  if (!p) notFound('Produit introuvable.');
+  if (!p.barcode) {
+    const code = internalEan13(id);
+    checkBarcode(code, id);
+    q.run('UPDATE products SET barcode = ?, updated_at = ? WHERE id = ?', code, nowLocal(), id);
+    broadcast('products');
+  }
+  res.json({ barcode: q.val('SELECT barcode FROM products WHERE id = ?', id) });
+});
+
+// ---- Reconnaissance par photo ------------------------------------------------------
+// Le modèle DINOv2-small (quantifié) tourne dans le navigateur ; le serveur garde les empreintes
+// des photos de référence et les renvoie aux appareils, qui comparent sur place.
+export const VISION_MODEL = 'dinov2-small-q8';
+const VISION_DIM = 768;
+const MAX_IMAGES = 12;
+
+r.get('/embeddings', (req, res) => {
+  const st = q.get(
+    `SELECT COUNT(*) AS n, COALESCE(MAX(i.id), 0) AS maxId, COALESCE(SUM(p.active), 0) AS act
+       FROM product_images i JOIN products p ON p.id = i.product_id`,
+  );
+  const etag = `"${VISION_MODEL}-${st.n}-${st.maxId}-${st.act}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.headers['if-none-match'] === etag) return res.status(304).end();
+  const rows = q.all(
+    `SELECT i.id, i.product_id, i.embedding FROM product_images i
+       JOIN products p ON p.id = i.product_id WHERE p.active = 1 AND i.model = ?`,
+    VISION_MODEL,
+  );
+  res.json({
+    model: VISION_MODEL,
+    dim: VISION_DIM,
+    items: rows.map((x) => ({ id: x.id, productId: x.product_id, v: Buffer.from(x.embedding).toString('base64') })),
+  });
+});
+
+r.get('/products/:id/images', (req, res) => {
+  res.json(q.all('SELECT id, thumb FROM product_images WHERE product_id = ? ORDER BY id', int(req.params.id)));
+});
+
+r.post('/products/:id/images', requirePerm('products.manage'), (req, res) => {
+  const id = int(req.params.id);
+  const { embedding, thumb } = req.body || {};
+  const emb = Buffer.from(String(embedding ?? ''), 'base64');
+  if (emb.length !== VISION_DIM * 4) bad('Empreinte de photo invalide.');
+  if (typeof thumb !== 'string' || !thumb.startsWith('data:image/jpeg;base64,') || thumb.length > 40000) bad('Miniature invalide.');
+  if (!q.get('SELECT id FROM products WHERE id = ?', id)) notFound('Produit introuvable.');
+  if (q.val('SELECT COUNT(*) FROM product_images WHERE product_id = ?', id) >= MAX_IMAGES) {
+    bad(`${MAX_IMAGES} photos au maximum par produit.`);
+  }
+  const img = q.run(
+    'INSERT INTO product_images (product_id, model, embedding, thumb, created_at) VALUES (?, ?, ?, ?, ?)',
+    id,
+    VISION_MODEL,
+    emb,
+    thumb,
+    nowLocal(),
+  );
+  broadcast('products');
+  res.json({ id: img.id });
+});
+
+r.delete('/product-images/:id', requirePerm('products.manage'), (req, res) => {
+  q.run('DELETE FROM product_images WHERE id = ?', int(req.params.id));
   broadcast('products');
   res.json({ ok: true });
 });
@@ -214,6 +351,7 @@ r.delete('/products/:id', requirePerm('products.manage'), (req, res) => {
 // ---- Import / export CSV ------------------------------------------------------
 const CSV_COLUMNS = [
   ['nom', (p) => p.name],
+  ['nom_arabe', (p) => p.name_ar],
   ['code', (p) => p.barcode],
   ['categorie', (p) => p.category_name],
   ['unite', (p) => p.unit],
@@ -224,6 +362,8 @@ const CSV_COLUMNS = [
   ['prix_achat', (p) => p.cost_price],
   ['stock', (p) => p.stock],
   ['seuil_alerte', (p) => p.min_stock],
+  ['tva', (p) => p.tax_rate],
+  ['peremption', (p) => p.expiry_date],
 ];
 
 r.get('/export/products.csv', requirePerm('products.manage'), (req, res) => {
@@ -252,7 +392,19 @@ const ALIASES = {
   prix_achat: ['prix_achat', 'prix_d_achat', 'cout', 'pa'],
   stock: ['stock', 'quantite', 'qte', 'stock_initial'],
   seuil_alerte: ['seuil_alerte', 'seuil', 'alerte', 'stock_min', 'stock_minimum'],
+  nom_arabe: ['nom_arabe', 'nom_ar', 'name_ar', 'arabe'],
+  tva: ['tva', 'taux_tva', 'tax_rate', 'vat'],
+  peremption: ['peremption', 'date_peremption', 'expiration', 'expiry_date', 'dlc'],
 };
+
+/** Date de péremption lue dans Excel : AAAA-MM-JJ ou JJ/MM/AAAA. */
+function csvDay(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (isDay(s)) return s;
+  const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : s;
+}
 
 r.post('/products/import', requirePerm('products.manage'), (req, res) => {
   const rows = parseCSV(req.body?.csv);
@@ -283,8 +435,11 @@ r.post('/products/import', requirePerm('products.manage'), (req, res) => {
           wholesale_price: get('prix_gros'),
           cost_price: get('prix_achat'),
           min_stock: get('seuil_alerte'),
+          name_ar: get('nom_arabe'),
+          tax_rate: get('tva'),
+          expiry_date: get('peremption') === undefined ? undefined : csvDay(get('peremption')),
         };
-        for (const k of ['retail_price', 'pack_size', 'wholesale_price', 'cost_price', 'min_stock']) {
+        for (const k of ['retail_price', 'pack_size', 'wholesale_price', 'cost_price', 'min_stock', 'tax_rate']) {
           if (body[k] !== undefined && String(body[k]).trim() !== '' && !Number.isFinite(num(body[k]))) {
             bad(`valeur numérique invalide « ${body[k]} »`);
           }
@@ -294,7 +449,7 @@ r.post('/products/import', requirePerm('products.manage'), (req, res) => {
         if (stock !== null && !(stock >= 0)) bad('stock invalide');
 
         const name = str(body.name, 120);
-        const barcode = str(body.barcode, 64);
+        const barcode = normalizeCode(str(body.barcode, 64));
         const existing =
           (barcode && q.get('SELECT * FROM products WHERE barcode = ?', barcode)) ||
           (name && q.get('SELECT * FROM products WHERE name = ? COLLATE NOCASE', name));
@@ -313,16 +468,21 @@ r.post('/products/import', requirePerm('products.manage'), (req, res) => {
             wholesale_price: existing.wholesale_price,
             cost_price: existing.cost_price,
             min_stock: existing.min_stock,
+            name_ar: existing.name_ar,
+            tax_rate: existing.tax_rate,
+            expiry_date: existing.expiry_date,
           };
           for (const [k, v] of Object.entries(keep)) {
-            if (body[k] === undefined || String(body[k]).trim() === '') body[k] = v;
+            if (body[k] === undefined || body[k] === null || String(body[k]).trim() === '') body[k] = v;
           }
           if (!req.perms.has('cost.view')) body.cost_price = existing.cost_price;
           const d = productInput(body);
           if (!str(body.category_name, 60)) d.category_id = existing.category_id;
           checkBarcode(d.barcode, existing.id);
           updateProduct(existing.id, d);
+          if ((d.expiry_date || null) !== (existing.expiry_date || null)) applyExpiry(existing.id, d.expiry_date);
           if (stock !== null && Math.abs(stock - existing.stock) > 0.0005) {
+            if (stock < existing.stock) consumeLots(existing.id, round3(existing.stock - stock));
             recordMovement({
               productId: existing.id,
               type: 'adjust',

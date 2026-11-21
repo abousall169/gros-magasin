@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { requirePerm } from '../auth.js';
-import { BALANCE_SQL } from '../services.js';
+import { BALANCE_SQL, supplierPayables } from '../services.js';
 import { CASH } from '../settings.js';
 import { int, round2, dayRange, todayLocal, addDays, isDay, sum } from '../util.js';
 import { toCSV, sendCSV } from '../csv.js';
@@ -15,9 +15,19 @@ const SALES_TOTALS = `
          COALESCE(SUM(subtotal), 0) AS subtotal,
          COALESCE(SUM(discount), 0) AS discount,
          COALESCE(SUM(cost_total), 0) AS cost,
-         COALESCE(SUM(total - paid), 0) AS credit
+         COALESCE(SUM(total - paid), 0) AS credit,
+         COALESCE(SUM(tax_total), 0) AS tax
     FROM sales s
    WHERE s.status = 'completed' AND s.created_at >= ? AND s.created_at < ?`;
+
+// Retours d'articles sur des ventes toujours valides (montant rendu, TVA et coût des articles remis en stock)
+const REFUND_TOTALS = `
+  SELECT COUNT(DISTINCT r.id) AS count,
+         COALESCE(SUM(ri.amount), 0) AS total,
+         COALESCE(SUM(ri.tax_amount), 0) AS tax,
+         COALESCE(SUM(ri.cost_total), 0) AS cost
+    FROM refunds r JOIN refund_items ri ON ri.refund_id = r.id JOIN sales s ON s.id = r.sale_id
+   WHERE s.status = 'completed' AND r.created_at >= ? AND r.created_at < ?`;
 
 function fillDays(rows, start, end) {
   const map = new Map(rows.map((r) => [r.day, r]));
@@ -92,6 +102,19 @@ r.get('/reports/dashboard', requirePerm('dashboard'), (req, res) => {
        FROM sales s JOIN users u ON u.id = s.user_id LEFT JOIN customers c ON c.id = s.customer_id
       ORDER BY s.id DESC LIMIT 8`,
   );
+  const expiringWhere = `p.active = 1 AND l.qty > 0 AND l.expiry_date IS NOT NULL AND l.expiry_date <> ''
+    AND l.expiry_date <= date('now', 'localtime', '+30 day')`;
+  const expiring = q.all(
+    `SELECT l.id, l.product_id, l.code, l.expiry_date, l.qty, p.name, p.unit, p.pack_unit, p.pack_size
+       FROM stock_lots l JOIN products p ON p.id = l.product_id WHERE ${expiringWhere}
+      ORDER BY l.expiry_date LIMIT 8`,
+  );
+  const refundsToday = q.get(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(r.amount), 0) AS total FROM refunds r JOIN sales s ON s.id = r.sale_id
+      WHERE s.status = 'completed' AND r.created_at >= ? AND r.created_at < ?`,
+    from,
+    to,
+  );
 
   res.json({
     today: {
@@ -115,6 +138,12 @@ r.get('/reports/dashboard', requirePerm('dashboard'), (req, res) => {
       ? round2(q.val('SELECT COALESCE(SUM(stock * cost_price), 0) FROM products WHERE active = 1 AND stock > 0'))
       : null,
     recent,
+    expiring,
+    expiringCount: q.val(`SELECT COUNT(*) FROM stock_lots l JOIN products p ON p.id = l.product_id WHERE ${expiringWhere}`),
+    toReview: req.perms.has('sales.cancel') ? q.val('SELECT COUNT(*) FROM sales WHERE needs_review IS NOT NULL') : 0,
+    payables: req.perms.has('stock.manage') ? supplierPayables() : null,
+    refunds: { count: refundsToday.count, total: round2(refundsToday.total) },
+    tax: round2(t.tax || 0),
   });
 });
 
@@ -185,7 +214,21 @@ r.get('/reports/summary', requirePerm('reports.view'), (req, res) => {
     ...range,
   );
   const expensesTotal = round2(sum(expenses, (e) => e.amount));
-  const margin = round2(t.revenue - t.cost);
+  const rf = q.get(REFUND_TOTALS, ...range);
+  const refundMethods = q.all(
+    `SELECT r.method, ROUND(SUM(r.amount), 2) AS amount FROM refunds r JOIN sales s ON s.id = r.sale_id
+      WHERE s.status = 'completed' AND r.created_at >= ? AND r.created_at < ? GROUP BY r.method ORDER BY amount DESC`,
+    ...range,
+  );
+  const supplierPaid = q.all(
+    `SELECT method, ROUND(SUM(amount), 2) AS amount FROM purchase_payments
+      WHERE created_at >= ? AND created_at < ? GROUP BY method ORDER BY amount DESC`,
+    ...range,
+  );
+  const tax = round2(t.tax - rf.tax);
+  const netRevenue = round2(t.revenue - rf.total);
+  // Bénéfice brut : ventes moins retours, hors TVA collectée, moins le coût d'achat des articles vendus
+  const margin = round2(netRevenue - tax - (t.cost - rf.cost));
 
   res.json({
     from: fromDay,
@@ -195,15 +238,22 @@ r.get('/reports/summary', requirePerm('reports.view'), (req, res) => {
       revenue: round2(t.revenue),
       subtotal: round2(t.subtotal),
       discount: round2(t.discount),
-      cost: round2(t.cost),
+      cost: round2(t.cost - rf.cost),
       margin,
-      marginRate: t.revenue > 0 ? round2((margin / t.revenue) * 100) : 0,
+      marginRate: netRevenue > 0 ? round2((margin / netRevenue) * 100) : 0,
       credit: round2(t.credit),
       average: t.count ? round2(t.revenue / t.count) : 0,
       expenses: expensesTotal,
       net: round2(margin - expensesTotal),
       customerPayments: round2(sum(customerPayments, (p) => p.amount)),
+      refunds: round2(rf.total),
+      refundCount: rf.count,
+      netRevenue,
+      tax,
     },
+    refundMethods,
+    supplierPaid,
+    payables: supplierPayables(),
     byType,
     salePayments,
     customerPayments,
@@ -265,10 +315,27 @@ r.get('/reports/cash', requirePerm('cash.own', 'cash.all'), (req, res) => {
     to,
     ...u,
   );
+  const refunds = q.all(
+    `SELECT r.method, ROUND(SUM(r.amount), 2) AS amount, COUNT(*) AS count FROM refunds r JOIN sales s ON s.id = r.sale_id
+      WHERE s.status = 'completed' AND r.created_at >= ? AND r.created_at < ?${uf.replace('user_id', 'r.user_id')}
+      GROUP BY r.method ORDER BY amount DESC`,
+    from,
+    to,
+    ...u,
+  );
+  const supplierPayments = q.all(
+    `SELECT method, ROUND(SUM(amount), 2) AS amount, COUNT(*) AS count FROM purchase_payments
+      WHERE created_at >= ? AND created_at < ?${uf} GROUP BY method ORDER BY amount DESC`,
+    from,
+    to,
+    ...u,
+  );
   const cashOf = (rows) => round2(sum(rows.filter((x) => x.method === CASH), (x) => x.amount));
   const cashSales = cashOf(salePayments);
   const cashPayments = cashOf(customerPayments);
   const cashExpenses = cashOf(expenses);
+  const cashRefunds = cashOf(refunds);
+  const cashSuppliers = cashOf(supplierPayments);
 
   res.json({
     date: day,
@@ -279,11 +346,15 @@ r.get('/reports/cash', requirePerm('cash.own', 'cash.all'), (req, res) => {
     customerPayments,
     expenses,
     expensesTotal: round2(sum(expenses, (e) => e.amount)),
+    refunds,
+    supplierPayments,
     cash: {
       sales: cashSales,
       payments: cashPayments,
       expenses: cashExpenses,
-      expected: round2(cashSales + cashPayments - cashExpenses),
+      refunds: cashRefunds,
+      suppliers: cashSuppliers,
+      expected: round2(cashSales + cashPayments - cashExpenses - cashRefunds - cashSuppliers),
     },
   });
 });
@@ -295,7 +366,9 @@ r.get('/export/sales.csv', requirePerm('reports.view'), (req, res) => {
   const [from, to] = dayRange(req.query.from, req.query.to);
   const rows = q.all(
     `SELECT s.*, c.name AS customer_name, u.name AS user_name,
-            (SELECT GROUP_CONCAT(method || ' ' || REPLACE(REPLACE(printf('%.2f', amount), '.00', ''), '.', ','), ' + ')
+            (SELECT COALESCE(SUM(rf.amount), 0) FROM refunds rf WHERE rf.sale_id = s.id) AS refunded,
+            (SELECT GROUP_CONCAT(method || ' ' || REPLACE(REPLACE(printf('%.2f', amount), '.00', ''), '.', ',')
+                                 || CASE WHEN reference IS NOT NULL THEN ' (' || reference || ')' ELSE '' END, ' + ')
                FROM sale_payments p WHERE p.sale_id = s.id) AS methods
        FROM sales s JOIN users u ON u.id = s.user_id LEFT JOIN customers c ON c.id = s.customer_id
       WHERE s.created_at >= ? AND s.created_at < ? ORDER BY s.id`,
@@ -314,7 +387,9 @@ r.get('/export/sales.csv', requirePerm('reports.view'), (req, res) => {
     ['paye', (s) => s.paid],
     ['credit', (s) => round2(s.total - s.paid)],
     ['paiements', (s) => s.methods || ''],
-    ['statut', (s) => (s.status === 'cancelled' ? 'Annulée' : 'Validée')],
+    ['tva', (s) => s.tax_total],
+    ['retours', (s) => s.refunded],
+    ['statut', (s) => (s.status === 'cancelled' ? 'Annulée' : s.needs_review ? 'À vérifier' : 'Validée')],
   ];
   if (req.perms.has('cost.view')) cols.push(['marge', (s) => round2(s.total - s.cost_total)]);
   sendCSV(res, `ventes_${from.slice(0, 10)}_${addDays(to.slice(0, 10), -1)}.csv`, toCSV(rows, cols));

@@ -12,6 +12,7 @@ import {
   loginFailed,
   loginSucceeded,
   requireAuth,
+  LANGS,
 } from '../auth.js';
 import { getSettings, updateSettings, paymentMethods, ROLES } from '../settings.js';
 import { bad, str, int, nowLocal, HttpError } from '../util.js';
@@ -58,9 +59,9 @@ r.post('/setup', (req, res) => {
     if (b.demo) seedDemo({ id: u.id, name: adminName, role: 'admin' });
     return u.id;
   });
-  createSession(res, userId, req.headers['user-agent']);
+  const token = createSession(res, userId, req.headers['user-agent']);
   broadcast('users', 'products', 'settings');
-  res.json({ ok: true });
+  res.json({ ok: true, token });
 });
 
 r.post('/login', (req, res) => {
@@ -74,8 +75,9 @@ r.post('/login', (req, res) => {
     throw new HttpError(401, 'Code PIN incorrect.');
   }
   loginSucceeded(user.id);
-  createSession(res, user.id, req.headers['user-agent']);
-  res.json({ ok: true });
+  // Le jeton sert uniquement à renvoyer plus tard les ventes faites hors ligne au nom de cet employé.
+  const token = createSession(res, user.id, req.headers['user-agent']);
+  res.json({ ok: true, token });
 });
 
 r.post('/logout', (req, res) => {
@@ -91,6 +93,13 @@ r.get('/me', requireAuth, (req, res) => {
     paymentMethods: paymentMethods(),
     roles: ROLES,
   });
+});
+
+r.put('/lang', requireAuth, (req, res) => {
+  const lang = String(req.body?.lang || '');
+  if (!LANGS.includes(lang)) bad('Langue inconnue.');
+  q.run('UPDATE users SET lang = ? WHERE id = ?', lang, req.user.id);
+  res.json({ ok: true });
 });
 
 r.post('/change-pin', requireAuth, (req, res) => {

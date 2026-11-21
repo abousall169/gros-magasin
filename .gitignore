@@ -1,5 +1,8 @@
 node_modules/
 data/
 backups/
+# Reconnaissance par photo : téléchargés par « npm run setup-vision » (trop lourds pour le dépôt)
+public/models/
+public/vendor/ort/
 .impeccable/review/
 .impeccable/mocks/

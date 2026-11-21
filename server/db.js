@@ -210,23 +210,158 @@ const MIGRATIONS = [
   );
   CREATE INDEX idx_expenses_created ON expenses(created_at);
   `,
+
+  // v2 : hors ligne, TVA, retours, lots (péremption), commandes et dettes fournisseurs,
+  // sessions de caisse, photos de référence, langue des employés
+  `
+  ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT 'fr';
+
+  ALTER TABLE products ADD COLUMN name_ar TEXT;
+  ALTER TABLE products ADD COLUMN tax_rate REAL;
+  ALTER TABLE products ADD COLUMN expiry_date TEXT;
+
+  ALTER TABLE sales ADD COLUMN client_id TEXT;
+  ALTER TABLE sales ADD COLUMN offline INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE sales ADD COLUMN needs_review TEXT;
+  ALTER TABLE sales ADD COLUMN synced_at TEXT;
+  ALTER TABLE sales ADD COLUMN tax_total REAL NOT NULL DEFAULT 0;
+  CREATE UNIQUE INDEX idx_sales_client ON sales(client_id) WHERE client_id IS NOT NULL;
+  CREATE INDEX idx_sales_review ON sales(needs_review) WHERE needs_review IS NOT NULL;
+
+  ALTER TABLE sale_items ADD COLUMN tax_rate REAL NOT NULL DEFAULT 0;
+  ALTER TABLE sale_items ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0;
+  ALTER TABLE sale_items ADD COLUMN returned_qty REAL NOT NULL DEFAULT 0;
+  ALTER TABLE sale_items ADD COLUMN lots TEXT NOT NULL DEFAULT '[]';
+
+  ALTER TABLE sale_payments ADD COLUMN reference TEXT;
+
+  CREATE TABLE refunds (
+    id INTEGER PRIMARY KEY,
+    sale_id INTEGER NOT NULL REFERENCES sales(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    amount REAL NOT NULL,
+    method TEXT NOT NULL,
+    restock INTEGER NOT NULL DEFAULT 1,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_refunds_sale ON refunds(sale_id);
+  CREATE INDEX idx_refunds_created ON refunds(created_at);
+  CREATE TABLE refund_items (
+    id INTEGER PRIMARY KEY,
+    refund_id INTEGER NOT NULL REFERENCES refunds(id) ON DELETE CASCADE,
+    sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),
+    qty REAL NOT NULL,
+    base_qty REAL NOT NULL,
+    amount REAL NOT NULL,
+    tax_amount REAL NOT NULL DEFAULT 0,
+    cost_total REAL NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_refund_items_refund ON refund_items(refund_id);
+
+  -- Lots : quantités restantes (unités de base) par date de péremption, consommées en commençant par la plus proche
+  CREATE TABLE stock_lots (
+    id INTEGER PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    code TEXT,
+    expiry_date TEXT,
+    qty REAL NOT NULL DEFAULT 0,
+    source TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_lots_product ON stock_lots(product_id);
+
+  ALTER TABLE purchases ADD COLUMN status TEXT NOT NULL DEFAULT 'received';
+  ALTER TABLE purchases ADD COLUMN received_at TEXT;
+  UPDATE purchases SET received_at = created_at;
+  ALTER TABLE purchase_items ADD COLUMN expiry_date TEXT;
+  ALTER TABLE purchase_items ADD COLUMN lot_code TEXT;
+  CREATE TABLE purchase_payments (
+    id INTEGER PRIMARY KEY,
+    purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id),
+    amount REAL NOT NULL,
+    method TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_purchase_payments_purchase ON purchase_payments(purchase_id);
+  CREATE INDEX idx_purchase_payments_created ON purchase_payments(created_at);
+  -- Les réceptions déjà saisies sont considérées comme réglées (pas de fausse dette fournisseur)
+  INSERT INTO purchase_payments (purchase_id, user_id, amount, method, created_at)
+    SELECT id, user_id, total, 'Réglé avant la mise à jour', created_at FROM purchases WHERE total > 0;
+
+  CREATE TABLE cash_sessions (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+    opening_float REAL NOT NULL DEFAULT 0,
+    opened_by INTEGER NOT NULL REFERENCES users(id),
+    opened_at TEXT NOT NULL,
+    closed_by INTEGER REFERENCES users(id),
+    closed_at TEXT,
+    expected REAL,
+    counted REAL,
+    difference REAL,
+    breakdown TEXT,
+    note TEXT
+  );
+  CREATE INDEX idx_cash_sessions_status ON cash_sessions(status, user_id);
+
+  -- Reconnaissance par photo : empreinte numérique (calculée sur l'appareil) + miniature
+  CREATE TABLE product_images (
+    id INTEGER PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    embedding BLOB NOT NULL,
+    thumb TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_product_images_product ON product_images(product_id);
+  `,
 ];
 
-function migrate() {
-  const current = db.prepare('PRAGMA user_version').get().user_version;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    db.exec('BEGIN');
+export const SCHEMA_VERSION = MIGRATIONS.length;
+
+/** Copie de la base avant d'en changer la structure (si elle contient déjà des données). */
+function backupBeforeMigration(handle, fromVersion) {
+  if (fromVersion === 0) return;
+  const used = handle.prepare('SELECT (SELECT COUNT(*) FROM sales) + (SELECT COUNT(*) FROM products) AS n').get().n;
+  if (!used) return;
+  const dir = path.join(DATA_DIR, 'avant-mise-a-jour');
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const file = path.join(dir, `grand-magasin-v${fromVersion}-${stamp}.db`);
+  handle.prepare('VACUUM INTO ?').run(file);
+  console.log(`  Copie de sécurité avant mise à jour de la base : ${file}`);
+}
+
+/** Met la structure d'une base à jour (la base du magasin, ou une sauvegarde à restaurer). */
+export function migrateDatabase(handle, { backup = false } = {}) {
+  const current = handle.prepare('PRAGMA user_version').get().user_version;
+  if (current > SCHEMA_VERSION) throw new Error('Base de données plus récente que ce logiciel : mettez le logiciel à jour.');
+  if (backup && current < SCHEMA_VERSION) backupBeforeMigration(handle, current);
+  for (let v = current; v < SCHEMA_VERSION; v++) {
+    handle.exec('BEGIN');
     try {
-      db.exec(MIGRATIONS[v]);
-      db.exec(`PRAGMA user_version = ${v + 1}`);
-      db.exec('COMMIT');
+      handle.exec(MIGRATIONS[v]);
+      handle.exec(`PRAGMA user_version = ${v + 1}`);
+      handle.exec('COMMIT');
     } catch (e) {
-      db.exec('ROLLBACK');
+      handle.exec('ROLLBACK');
       throw e;
     }
   }
 }
-migrate();
+migrateDatabase(db, { backup: true });
+
+/** Paramètres internes (non envoyés aux appareils). */
+export const rawSetting = {
+  get: (key, fallback = null) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? fallback,
+  set: (key, value) =>
+    db
+      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, String(value)),
+};
 
 // ---------------------------------------------------------------------------
 // Aide aux requêtes

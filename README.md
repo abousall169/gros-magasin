@@ -6,26 +6,42 @@ Il fonctionne **en local** : un ordinateur du magasin sert de serveur, et les em
 
 ## Ce que fait le logiciel
 
-- **Caisse** : recherche par nom ou code-barres (douchette USB/Bluetooth acceptée), bascule **Détail / Gros**
+- **Caisse** : recherche par nom ou code-barres (douchette USB/Bluetooth acceptée), **scan avec la caméra**
+  du téléphone, **reconnaissance d'un produit par photo**, bascule **Détail / Gros**
   (la caisse change de couleur : jaune safran = détail, indigo = gros), quantités décimales (kg, litres),
-  remises et prix négociés (si autorisé), paniers en attente, facture proforma.
-- **Encaissement** : espèces avec calcul de la monnaie, Mobile Money (Orange Money, Wave…), carte, virement,
-  paiements mélangés, **vente à crédit** sur le compte du client (avec plafond de crédit).
-- **Reçus** : ticket 58 ou 80 mm, facture A4 avec le montant en lettres, envoi par **WhatsApp**.
+  remises et prix négociés (si autorisé, avec une remise maximale pour les vendeurs), paniers en attente, facture proforma.
+- **Encaissement** : espèces avec calcul de la monnaie, Mobile Money (Orange Money, Wave…) avec le **n° de transaction**,
+  carte, virement, paiements mélangés, **vente à crédit** sur le compte du client (avec plafond de crédit).
+- **Hors ligne** : si le Wi-Fi ou l'ordinateur serveur tombe, les téléphones continuent à vendre. Les ventes sont gardées
+  sur l'appareil puis envoyées au retour du réseau, avec leur vraie date, sans doublon. Une vente qui ne respectait pas
+  une règle (stock, prix, remise, crédit) est enregistrée quand même et signalée au gérant (**Ventes › À vérifier**).
+- **Reçus** : ticket 58 ou 80 mm (navigateur, ou **imprimante thermique ESC/POS** USB ou réseau, avec coupe du papier
+  et **ouverture du tiroir-caisse**), facture A4 avec le montant en lettres, envoi par **WhatsApp** ou **SMS**.
 - **Produits** : prix de détail, prix de gros, contenance du colis (ex. 1 carton = 12 bouteilles),
-  prix d'achat, seuil d'alerte. Le stock est compté à l'unité et affiché en « 20 cartons + 4 bouteilles ».
-  Import / export Excel (CSV).
-- **Stock** : réceptions fournisseurs, inventaire et ajustements (pertes, casse…), historique de chaque mouvement,
-  alertes de stock bas.
-- **Clients & crédits** : dette de chaque client, versements, relevé de compte imprimable, rappel WhatsApp,
+  prix d'achat, seuil d'alerte, nom en arabe, taux de TVA, date de péremption, photos de référence.
+  Le stock est compté à l'unité et affiché en « 20 cartons + 4 bouteilles ». Import / export Excel (CSV).
+- **Codes-barres et étiquettes** : code interne EAN-13 pour les produits qui n'en ont pas,
+  étiquettes en feuilles A4 (3×8, 4×10, 5×13) ou sur l'imprimante de tickets.
+- **Stock** : réceptions immédiates ou **commandes fournisseurs** reçues plus tard, **lots avec date de péremption**
+  (le lot qui périme le plus tôt part en premier), inventaire et ajustements (pertes, casse…),
+  historique de chaque mouvement, alertes de stock bas et de péremption proche.
+- **Fournisseurs** : paiements partiels, **dettes envers les fournisseurs**, achats non payés.
+- **Clients & crédits** : dette de chaque client, versements, relevé de compte imprimable, rappel WhatsApp ou SMS,
   reprise des dettes du cahier (dette antérieure).
+- **Retours d'articles** : retour partiel d'une vente, remboursé en espèces, par un autre moyen ou déduit de la dette
+  du client, avec ou sans remise en stock. Annulation complète d'une vente (gérant).
 - **Dépenses** : transport, loyer, manutention… déduites de la caisse du jour.
-- **Rapports** : chiffre d'affaires, bénéfice brut et net, part gros / détail, produits les plus vendus,
-  ventes par vendeur et par rayon, **clôture de caisse** (espèces attendues / comptées / écart).
+- **Caisse** : **ouverture avec un fond de caisse et clôture** avec les espèces comptées (par vendeur ou pour tout
+  le magasin), écart calculé, historique des clôtures, ticket de clôture.
+- **Rapports** : chiffre d'affaires, retours, **TVA collectée** (prix TTC), bénéfice brut et net, part gros / détail,
+  produits les plus vendus, ventes par vendeur et par rayon, dettes clients et fournisseurs.
 - **Plusieurs employés en même temps** : le stock se met à jour en direct sur tous les appareils.
 - **Rôles** : Administrateur (tout), Gestionnaire (produits, stock, rapports), Vendeur (caisse ;
   ne voit pas les prix d'achat ni les bénéfices).
-- **Sauvegardes automatiques** au démarrage puis toutes les 6 heures.
+- **Langues** : français, **arabe** (de droite à gauche) et anglais, au choix de chaque employé ; les tickets
+  sortent dans sa langue.
+- **Sauvegardes automatiques** au démarrage puis toutes les 6 heures, copie vers une clé USB ou un dossier
+  synchronisé, **restauration** depuis l'application.
 
 ## Installation
 
@@ -48,14 +64,36 @@ Il fonctionne **en local** : un ordinateur du magasin sert de serveur, et les em
 > **Windows** : au premier démarrage, Windows demande d'autoriser « Node.js » sur le réseau.
 > Cochez **Réseaux privés** et validez, sinon les téléphones ne pourront pas se connecter.
 
+### Démarrage automatique avec Windows (recommandé pour l'ordinateur du magasin)
+
+Double-cliquez sur **`installer-demarrage-auto.bat`** (acceptez la demande d'administrateur). Il :
+- crée une tâche planifiée qui lance la caisse **au démarrage du PC**, avant même l'ouverture de session
+  (reprise automatique après une coupure de courant), et la relance toute seule si elle s'arrête ;
+- ouvre les ports 3000 et 3443 dans le pare-feu **pour le réseau local uniquement**
+  (un Wi-Fi classé « Public » bloque sinon les téléphones) ;
+- propose d'empêcher la mise en veille du PC sur secteur (un PC en veille = caisse inaccessible).
+
+Ensuite, plus besoin de `demarrer.bat`. Journaux : `data\logs\`. Pour tout retirer : **`desinstaller-demarrage-auto.bat`**
+(les données sont conservées). Sous le compte système, une imprimante installée seulement pour *votre* utilisateur
+peut ne pas être vue : installez alors avec `powershell -File scripts\install-autostart.ps1 -Mode Logon`.
+
+**Code PIN administrateur oublié** : sur l'ordinateur serveur, double-cliquez sur `reinitialiser-pin-admin.bat`.
+
 ## Connecter les téléphones et tablettes
 
 1. Le téléphone doit être connecté au **même Wi-Fi** que l'ordinateur serveur.
-2. Dans le logiciel : **Paramètres › Connecter un appareil**. Scannez le **QR code** avec l'appareil photo,
-   ou tapez l'adresse affichée (par exemple `http://192.168.1.15:3000`) dans Chrome ou Safari.
-   Cette adresse est aussi affichée dans la fenêtre noire au démarrage.
-3. Dans le menu du navigateur, choisissez **« Ajouter à l'écran d'accueil »** : la caisse s'ouvre comme une application.
+2. Dans le logiciel : **Paramètres › Connecter un appareil**. Scannez le **QR code** avec l'appareil photo :
+   il ouvre la page **d'installation** (`http://<ip-du-pc>:3000/install`), qui explique comment installer
+   le certificat du magasin (Android, iPhone), **une seule fois par appareil**.
+3. Ouvrez ensuite l'adresse **sécurisée** `https://<ip-du-pc>:3443` et choisissez **« Ajouter à l'écran d'accueil »**
+   dans le menu du navigateur : la caisse s'ouvre comme une application.
 4. Chaque employé se connecte avec **son nom et son code PIN**.
+
+La connexion sécurisée (HTTPS) est nécessaire pour **la caméra** (scan, photos) et **la vente hors ligne** :
+le serveur crée sa propre autorité de certification dans `data/certs/` (**ne partagez jamais `ca-key.pem`**).
+Le certificat du serveur se renouvelle tout seul si l'adresse IP change ; les téléphones n'ont rien à refaire.
+L'adresse `http://<ip>:3000` reste utilisable, sans caméra ni hors ligne. Variables : `HTTPS_PORT` (3443 par défaut),
+`NO_HTTPS=1` pour désactiver, `TLS_NAMES=nom,ip` pour ajouter des noms ou adresses au certificat.
 
 Conseil : demandez à votre fournisseur Internet de « réserver » l'adresse IP de l'ordinateur serveur dans la box,
 pour que l'adresse ne change pas d'un jour à l'autre.
@@ -79,12 +117,30 @@ Raccourcis clavier en caisse (ordinateur) : `F2` ou `/` pour chercher, `F4` pour
 
 ## Imprimantes
 
-- **Ticket** : installez votre imprimante thermique 58 ou 80 mm sur l'ordinateur comme imprimante normale,
-  puis choisissez la largeur dans **Paramètres › Magasin & ventes**. Dans la fenêtre d'impression du navigateur,
-  choisissez l'imprimante et mettez les marges à « Aucune ».
+- **Imprimante de tickets (ESC/POS, 58 ou 80 mm)** : **Paramètres › Imprimante & tiroir**.
+  - **USB** : installez l'imprimante dans Windows (pilote du fabricant ou « Generic / Text Only ») puis choisissez-la.
+  - **Réseau** (Ethernet / Wi-Fi) : choisissez « Imprimante réseau » et saisissez son adresse IP (port 9100 par défaut).
+  - Le ticket est dessiné par l'appareil qui vend (français et arabe corrects) puis envoyé directement à l'imprimante,
+    **même depuis un téléphone**, sans fenêtre d'impression. Options : impression automatique après chaque vente,
+    coupe du papier, **ouverture du tiroir-caisse** (branché sur l'imprimante) à chaque vente en espèces.
+  - Sans imprimante réglée, le bouton « Ticket » ouvre la fenêtre d'impression du navigateur (marges : « Aucune »).
 - **Facture A4** : n'importe quelle imprimante, ou « Enregistrer en PDF ».
-- Sur téléphone, le plus simple est d'envoyer le reçu par **WhatsApp**
+- **Étiquettes** : **Produits › Étiquettes** : feuilles A4 (échelle 100 %, sans en-têtes ni pieds de page)
+  ou imprimante de tickets (une étiquette par ticket, coupée).
+- Sur téléphone, le reçu peut aussi partir par **WhatsApp** ou **SMS**
   (renseignez l'indicatif du pays dans les Paramètres, ex. 221, 225, 223, 224).
+
+## Reconnaissance par photo
+
+100 % locale : le modèle DINOv2-small (24 Mo) tourne dans le navigateur de l'appareil, aucune photo ne sort du magasin.
+- **Enregistrer** : *Produits › un produit › Photos de référence* : 3 à 5 photos du produit seul, sous des angles
+  différents, avec une bonne lumière (12 au maximum).
+- **Utiliser** : en caisse, bouton appareil photo à côté de la recherche → photo de l'article → les 3 produits les plus
+  proches s'affichent avec un niveau de confiance ; **le vendeur confirme toujours**.
+- Le code-barres reste plus fiable pour les produits emballés ; la photo sert surtout aux produits sans code
+  (fruits, légumes, vrac).
+- Le modèle et son moteur (dossiers `public/models` et `public/vendor/ort`, ~80 Mo) sont téléchargés **une seule fois**
+  par `npm install` (Internet nécessaire ce jour-là). Pour les télécharger plus tard : `npm run setup-vision`.
 
 ## Importer vos produits depuis Excel
 
@@ -96,10 +152,13 @@ est mis à jour ; une case vide garde la valeur actuelle.
 ## Sauvegardes
 
 - Automatiques dans le dossier `backups` (au démarrage puis toutes les 6 heures, les 60 dernières sont gardées).
-- **Paramètres › Sauvegardes** : sauvegarde immédiate et téléchargement.
-  Copiez régulièrement une sauvegarde sur une clé USB.
-- **Restaurer** : arrêtez le logiciel, remplacez `data/grand-magasin.db` par la sauvegarde
-  (renommée `grand-magasin.db`), puis relancez.
+- **Paramètres › Sauvegardes** : sauvegarde immédiate, téléchargement, et **dossier de copie** (clé USB, Google Drive
+  pour ordinateur…) où chaque sauvegarde est aussi copiée. **Sans ce dossier, les sauvegardes restent sur le même
+  disque que les données.**
+- **Restaurer** : *Paramètres › Sauvegardes* › « Restaurer » sur une sauvegarde de la liste, ou « Restaurer depuis
+  un fichier ». Le logiciel n'a pas besoin d'être arrêté ; une copie « avant-restauration » est faite juste avant
+  et tous les appareils doivent se reconnecter.
+- Avant chaque mise à jour de la structure de la base, une copie est faite dans `data/avant-mise-a-jour/`.
 
 ## Dépannage
 
@@ -108,14 +167,21 @@ est mis à jour ; une case vide garde la valeur actuelle.
 | Le téléphone n'arrive pas à ouvrir l'adresse | Même Wi-Fi ? Pare-feu Windows autorisé (Réseaux privés) ? L'adresse IP de l'ordinateur a peut-être changé : regardez la fenêtre noire ou Paramètres › Connecter un appareil. |
 | « Le port 3000 est déjà utilisé » | Le logiciel est déjà ouvert dans une autre fenêtre. Ou lancez-le sur un autre port : `PORT=3001 npm start` (Mac) / `set PORT=3001` puis `demarrer.bat` (Windows). |
 | « Serveur injoignable » en rouge | L'ordinateur serveur est éteint, en veille ou la fenêtre noire a été fermée. Désactivez la mise en veille de l'ordinateur serveur. |
-| Code PIN oublié | Un administrateur peut le changer dans Paramètres › Employés. |
+| Code PIN oublié | Un administrateur peut le changer dans Paramètres › Employés. Administrateur : `reinitialiser-pin-admin.bat` sur l'ordinateur serveur. |
+| La caméra ou le mode hors ligne ne marchent pas sur le téléphone | Utilisez l'adresse `https://…:3443` après avoir installé le certificat (`http://<ip>:3000/install`). |
+| Ventes « en attente d'envoi » sur un téléphone | Elles partent seules au retour du réseau. Si le serveur en refuse une, elle reste « à traiter » sur l'appareil : réessayer ou supprimer. |
 | Vente refusée pour « stock insuffisant » | Faites une réception ou un inventaire du produit, ou autorisez la vente sans stock dans les Paramètres. |
 
 ## Pour un développeur
 
-- Serveur : Node.js ≥ 22.13, Express, base **SQLite** intégrée (`node:sqlite`, aucune compilation native).
-  Fichier de données : `data/grand-magasin.db`. Variables : `PORT`, `GM_DATA_DIR`, `GM_BACKUP_DIR`.
-- Interface : Vue 3 sans étape de compilation (copie locale dans `public/vendor`), modules ES dans `public/js`.
+- Serveur : Node.js ≥ 22.13, Express, base **SQLite** intégrée (`node:sqlite`, aucune compilation native),
+  HTTPS local avec `node-forge` (`server/tls.js`, page `server/install.js`).
+  Fichier de données : `data/grand-magasin.db`. Variables : `PORT`, `HTTPS_PORT`, `NO_HTTPS`, `TLS_NAMES`,
+  `GM_DATA_DIR`, `GM_BACKUP_DIR`.
+- Interface : Vue 3 sans étape de compilation (copies locales dans `public/vendor` : Vue, ZXing pour le scan,
+  transformers.js pour la reconnaissance par photo), modules ES dans `public/js`, service worker `public/sw.js`.
   Temps réel entre appareils par Server-Sent Events (`/api/events`).
-- Code : `server/services.js` (logique de vente gros / détail, stock, crédit), `server/routes/*` (API),
-  `public/js/pages/*` (écrans), `public/css/app.css` (styles).
+- Code : `server/services.js` (logique de vente gros / détail, stock et lots, crédit, retours, achats),
+  `server/routes/*` (API), `server/print/` (ESC/POS), `public/js/pages/*` (écrans), `public/js/i18n*.js` (langues),
+  `public/css/app.css` (styles).
+- Hors ligne : `public/js/api.js` (file d'attente des ventes, identifiant unique par vente : pas de doublon au renvoi).

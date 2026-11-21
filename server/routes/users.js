@@ -20,7 +20,7 @@ r.put('/settings', requirePerm('settings.manage'), (req, res) => {
 r.get('/users', requirePerm('users.manage'), (req, res) => {
   res.json(
     q.all(
-      `SELECT u.id, u.name, u.role, u.active, u.created_at,
+      `SELECT u.id, u.name, u.role, u.active, u.created_at, u.lang,
               (SELECT MAX(last_seen) FROM sessions s WHERE s.user_id = u.id) AS last_seen,
               (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS devices
          FROM users u

@@ -197,17 +197,20 @@ export function seedDemo(admin) {
           );
         } else if (ev.kind === 'purchase') {
           const restock = products.filter((p) => p.packUnit).slice(0, 8);
+          const items = restock.map((p) => {
+            const def = PRODUCTS.find((x) => x[0] === p.name);
+            p.stock += 5 * p.packSize;
+            return { product_id: p.id, unit_type: 'pack', qty: 5, unit_cost: def[7] * p.packSize };
+          });
           createPurchase(
             admin,
             {
               supplier_id: suppliers[1],
               reference: 'BL-2026-118',
               note: 'Réapprovisionnement hebdomadaire',
-              items: restock.map((p) => {
-                const def = PRODUCTS.find((x) => x[0] === p.name);
-                p.stock += 5 * p.packSize;
-                return { product_id: p.id, unit_type: 'pack', qty: 5, unit_cost: def[7] * p.packSize };
-              }),
+              items,
+              paid: round2(items.reduce((s, it) => s + it.qty * it.unit_cost, 0)),
+              method: 'Virement / Chèque',
             },
             { at: ev.at },
           );

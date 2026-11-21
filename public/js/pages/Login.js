@@ -1,8 +1,9 @@
 // Première installation + connexion par code PIN.
 import { ref, computed, onMounted, onUnmounted } from '../vue.js';
-import { api } from '../api.js';
+import { api, sessionToken } from '../api.js';
 import { store, loadStatus, toastError } from '../store.js';
 import { initials } from '../format.js';
+import { t, LANGS, setLang } from '../i18n.js';
 import { Icon } from '../components/ui.js';
 
 const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Vendeur' };
@@ -30,7 +31,8 @@ const Setup = {
       if (v.pin !== v.pin2) return (error.value = 'Les deux codes PIN ne sont pas identiques.');
       busy.value = true;
       try {
-        await api.post('/auth/setup', { ...v, currency_decimals: v.currency === '€' ? 2 : 0 });
+        const r = await api.post('/auth/setup', { ...v, currency_decimals: v.currency === '€' ? 2 : 0 });
+        sessionToken.set(r.token);
         emit('done');
       } catch (e) {
         error.value = e.message;
@@ -101,10 +103,11 @@ const PinLogin = {
       if (pin.value.length < 4 || busy.value) return;
       busy.value = true;
       try {
-        await api.post('/auth/login', { user_id: user.value.id, pin: pin.value });
+        const r = await api.post('/auth/login', { user_id: user.value.id, pin: pin.value });
+        sessionToken.set(r.token);
         emit('done');
       } catch (e) {
-        error.value = e.message;
+        error.value = e.status === 0 ? t('Connexion impossible : l’ordinateur du magasin est injoignable.') : e.message;
         pin.value = '';
         shake.value = true;
         setTimeout(() => (shake.value = false), 400);
@@ -124,38 +127,42 @@ const PinLogin = {
       if (users.value.length === 1) choose(users.value[0]);
     });
     onUnmounted(() => document.removeEventListener('keydown', onKey));
-    return { store, users, user, pin, error, shake, busy, choose, press, back, submit, initials, ROLE };
+    return { store, users, user, pin, error, shake, busy, choose, press, back, submit, initials, ROLE, LANGS, setLang };
   },
   template: `
     <div class="login">
       <div class="login-head">
         <h1>{{ store.status?.store_name }}</h1>
-        <p>{{ user ? 'Entrez votre code PIN' : 'Qui utilise la caisse ?' }}</p>
+        <p>{{ user ? t('Entrez votre code PIN') : t('Qui utilise la caisse ?') }}</p>
+        <div class="lang-switch" role="group" :aria-label="t('Langue')">
+          <button v-for="l in LANGS" :key="l.id" type="button" :class="{ on: store.lang === l.id }" @click="setLang(l.id)">{{ l.label }}</button>
+        </div>
       </div>
+      <div v-if="store.status?.offline" class="login-card narrow"><div class="alert danger"><Icon name="wifi" /><span>{{ t('Connexion impossible : l’ordinateur du magasin est injoignable. Vérifiez le Wi-Fi.') }}</span></div></div>
       <div v-if="!user" class="login-card">
         <div class="user-grid">
           <button v-for="u in users" :key="u.id" type="button" class="user-tile" @click="choose(u)">
             <span class="avatar">{{ initials(u.name) }}</span>
             <strong>{{ u.name }}</strong>
-            <span>{{ ROLE[u.role] }}</span>
+            <span>{{ t(ROLE[u.role]) }}</span>
           </button>
         </div>
       </div>
       <div v-else class="login-card narrow">
         <div class="row">
           <span class="avatar">{{ initials(user.name) }}</span>
-          <div class="grow"><strong>{{ user.name }}</strong><div class="xsmall faint">{{ ROLE[user.role] }}</div></div>
-          <button v-if="users.length > 1" type="button" class="btn ghost sm" @click="user = null"><Icon name="swap" size="sm" />Changer</button>
+          <div class="grow"><strong>{{ user.name }}</strong><div class="xsmall faint">{{ t(ROLE[user.role]) }}</div></div>
+          <button v-if="users.length > 1" type="button" class="btn ghost sm" @click="user = null"><Icon name="swap" size="sm" />{{ t('Changer') }}</button>
         </div>
-        <div class="pin-dots" :class="{ shake }" aria-hidden="true">
+        <div class="pin-dots" :class="{ shake }" aria-hidden="true" dir="ltr">
           <i v-for="n in Math.max(4, pin.length)" :key="n" :class="{ on: n <= pin.length }"></i>
         </div>
         <p class="pin-error" role="alert">{{ error }}</p>
-        <div class="keypad">
+        <div class="keypad" dir="ltr">
           <button v-for="d in ['1','2','3','4','5','6','7','8','9']" :key="d" type="button" @click="press(d)">{{ d }}</button>
-          <button type="button" @click="back" aria-label="Effacer"><Icon name="backspace" size="lg" /></button>
+          <button type="button" @click="back" :aria-label="t('Effacer')"><Icon name="backspace" size="lg" /></button>
           <button type="button" @click="press('0')">0</button>
-          <button type="button" class="ok" :disabled="pin.length < 4 || busy" @click="submit">Valider</button>
+          <button type="button" class="ok" :disabled="pin.length < 4 || busy" @click="submit">{{ t('Valider') }}</button>
         </div>
       </div>
     </div>`,

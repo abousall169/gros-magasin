@@ -2,8 +2,8 @@
 import { Router } from 'express';
 import { q, tx } from '../db.js';
 import { requirePerm } from '../auth.js';
-import { BALANCE_SQL, customerBalance } from '../services.js';
-import { paymentMethods } from '../settings.js';
+import { BALANCE_SQL, customerBalance, PURCHASE_PAID_SQL } from '../services.js';
+import { paymentMethods, ACCOUNT_REFUND } from '../settings.js';
 import { bad, notFound, str, num, int, round2, nowLocal } from '../util.js';
 import { toCSV, sendCSV } from '../csv.js';
 import { broadcast } from '../events.js';
@@ -47,6 +47,14 @@ r.get('/customers/:id', (req, res) => {
     `SELECT cp.*, u.name AS user_name FROM customer_payments cp JOIN users u ON u.id = cp.user_id
       WHERE cp.customer_id = ? ORDER BY cp.id DESC LIMIT 300`,
     id,
+  );
+  // Retours d'articles déduits de la dette du client
+  c.refunds = q.all(
+    `SELECT r.id, r.sale_id, r.amount, r.reason, r.created_at, u.name AS user_name
+       FROM refunds r JOIN sales s ON s.id = r.sale_id JOIN users u ON u.id = r.user_id
+      WHERE s.customer_id = ? AND s.status = 'completed' AND r.method = ? ORDER BY r.id DESC LIMIT 300`,
+    id,
+    ACCOUNT_REFUND,
   );
   c.totals = q.get(
     `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
@@ -177,8 +185,12 @@ r.get('/export/customers.csv', requirePerm('reports.view'), (req, res) => {
 r.get('/suppliers', requirePerm('stock.manage'), (req, res) => {
   res.json(
     q.all(
-      `SELECT s.*, (SELECT COUNT(*) FROM purchases p WHERE p.supplier_id = s.id) AS purchases,
-              (SELECT COALESCE(SUM(total), 0) FROM purchases p WHERE p.supplier_id = s.id) AS purchases_total
+      `SELECT s.*,
+              (SELECT COUNT(*) FROM purchases x WHERE x.supplier_id = s.id AND x.status <> 'cancelled') AS purchases,
+              (SELECT COALESCE(SUM(total), 0) FROM purchases x WHERE x.supplier_id = s.id AND x.status = 'received') AS purchases_total,
+              (SELECT COALESCE(SUM(x.total - ${PURCHASE_PAID_SQL}), 0) FROM purchases x
+                WHERE x.supplier_id = s.id AND x.status = 'received') AS balance,
+              (SELECT COUNT(*) FROM purchases x WHERE x.supplier_id = s.id AND x.status = 'ordered') AS pending_orders
          FROM suppliers s WHERE s.active = 1 ORDER BY s.name COLLATE NOCASE`,
     ),
   );

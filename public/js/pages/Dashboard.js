@@ -27,7 +27,7 @@ export default {
     const offs = [];
     onMounted(() => {
       load();
-      for (const t of ['sales', 'products', 'customers', 'expenses']) {
+      for (const t of ['sales', 'products', 'customers', 'expenses', 'purchases']) {
         offs.push(
           onChange(t, () => {
             clearTimeout(timer);
@@ -71,12 +71,19 @@ export default {
       </div>
       <Skeleton v-if="!d" :rows="6" />
       <template v-else>
+        <div v-if="d.toReview" class="alert danger" style="margin-bottom:16px">
+          <Icon name="alert" />
+          <div class="grow"><b>{{ d.toReview }} vente(s) faite(s) hors ligne à vérifier</b> (stock, prix, remise, crédit ou date de l'appareil). Elles sont enregistrées : contrôlez-les.</div>
+          <a class="btn sm" href="#/ventes?filtre=a-verifier">Voir</a>
+        </div>
         <section class="day" :style="{ opacity: loading ? 0.6 : 1 }">
           <div class="day-main">
             <small>Recette du jour</small>
             <strong>{{ money(d.today.revenue) }}</strong>
             <div class="vs">{{ d.today.count }} vente{{ d.today.count > 1 ? 's' : '' }} · panier moyen {{ money(d.today.average) }}</div>
             <div class="vs">{{ vsYesterday }}</div>
+            <div class="vs" v-if="d.refunds.count">{{ d.refunds.count }} retour(s) d'articles : −{{ money(d.refunds.total) }}</div>
+            <div class="vs" v-if="d.tax">dont TVA : {{ money(d.tax) }}</div>
           </div>
           <div class="figures">
             <div class="figure ok" v-if="d.today.margin !== null"><small>Bénéfice brut</small><strong>{{ money(d.today.margin) }}</strong><div class="sub">ventes moins prix d'achat</div></div>
@@ -124,6 +131,18 @@ export default {
             <div class="row" style="margin-top:12px" v-if="d.lowCount > d.low.length">
               <a href="#/produits?filtre=bas" class="small">Voir les {{ d.lowCount }} produits</a>
             </div>
+            <template v-if="d.expiring.length">
+              <div class="panel-head" style="margin-top:20px">
+                <h2>Péremption proche (30 jours)</h2>
+                <span class="badge danger">{{ d.expiringCount }} lot{{ d.expiringCount > 1 ? 's' : '' }}</span>
+              </div>
+              <div class="list">
+                <a v-for="l in d.expiring" :key="l.id" class="list-row click" href="#/stock?onglet=peremption" style="color:inherit;text-decoration:none">
+                  <div class="main-col"><div class="title">{{ l.name }}</div><div class="sub">{{ stockText(l, l.qty) }}<template v-if="l.code"> · lot {{ l.code }}</template></div></div>
+                  <span class="badge" :class="l.expiry_date < today() ? 'solid-danger' : 'danger'">{{ l.expiry_date.split('-').reverse().join('/') }}</span>
+                </a>
+              </div>
+            </template>
           </section>
         </div>
 
@@ -156,6 +175,7 @@ export default {
             <Empty v-else icon="chart" title="Pas encore de données" />
             <div class="kv" style="margin-top:16px">
               <div><span>Les clients vous doivent <span class="faint">({{ d.receivables.customers }} client{{ d.receivables.customers > 1 ? 's' : '' }})</span></span><span><a href="#/clients?filtre=dette">{{ money(d.receivables.total) }}</a></span></div>
+              <div v-if="d.payables !== null"><span>Vous devez aux fournisseurs</span><span><a href="#/stock?onglet=fournisseurs">{{ money(d.payables) }}</a></span></div>
               <div v-if="d.stockValue !== null"><span>Valeur du stock (prix d'achat)</span><span>{{ money(d.stockValue) }}</span></div>
             </div>
           </section>

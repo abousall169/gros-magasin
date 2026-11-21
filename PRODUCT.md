@@ -32,13 +32,15 @@ Logiciel de caisse local pour un grand magasin qui vend à la fois **en gros** (
 
 - Prix de détail par unité ; prix de gros par colis (ou par unité si pas de colis) ; contenance du colis ; stock suivi en unités de base et affiché en « colis + unités ».
 - Rôles : Administrateur, Gestionnaire, Vendeur/Caissier (prix d'achat et marges cachés aux vendeurs ; modification des prix et vente à crédit réglables).
-- Crédit client avec plafond, solde initial, versements ; annulation de vente avec remise en stock ; approvisionnements fournisseurs ; inventaire ; dépenses ; clôture de caisse ; rapports ; import/export CSV (Excel) ; sauvegardes automatiques.
-- Pas de caméra pour scanner (le navigateur l'interdit hors HTTPS sur le réseau local) : non prévu pour l'instant.
-- Non décidé : TVA sur factures, gestion des dettes fournisseurs, retours partiels.
+- Crédit client avec plafond, solde initial, versements ; annulation de vente avec remise en stock ; retours partiels (remboursés ou déduits de la dette) ; commandes et réceptions fournisseurs avec paiements partiels et dettes fournisseurs ; lots avec date de péremption ; inventaire ; dépenses ; ouverture et clôture de caisse ; rapports ; import/export CSV (Excel) ; sauvegardes automatiques et restauration.
+- HTTPS local (autorité de certification du magasin, installée une fois par appareil) : caméra pour scanner et reconnaître un produit par photo, vente hors ligne avec envoi différé et ventes « à vérifier ».
+- TVA comprise dans les prix (facultative), affichée sur tickets, factures et rapports.
+- Imprimante de tickets ESC/POS (USB ou réseau) et tiroir-caisse, en plus de l'impression du navigateur.
+- Langues : français par défaut, arabe (de droite à gauche) et anglais pour les écrans des vendeurs ; les écrans de gestion restent en français.
 
 ## Brand Commitments
 
-Aucune identité imposée. Le nom du magasin est saisi à l'installation et apparaît sur l'écran de connexion, les tickets et les factures. Langue : français.
+Aucune identité imposée. Le nom du magasin est saisi à l'installation et apparaît sur l'écran de connexion, les tickets et les factures. Langue : français (arabe et anglais au choix de chaque employé pour la caisse).
 
 ## Evidence on Hand
 

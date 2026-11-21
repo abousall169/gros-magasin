@@ -15,17 +15,26 @@ import {
   stockText,
   stockLevel,
   dateTimeFr,
+  dateFr,
   round3,
 } from '../format.js';
 import { route, setQuery } from '../router.js';
 import { Icon, Sheet, Empty, Skeleton, PackQtyInput, useMedia } from '../components/ui.js';
+import { Scanner, PhotoButton } from '../components/camera.js';
+import Labels from '../components/Labels.js';
+import { normalizeCode } from '../barcode.js';
+import { analyzePhoto } from '../vision.js';
 
 const UNITS = ['pièce', 'kg', 'litre', 'bouteille', 'sachet', 'paquet', 'boîte', 'sac', 'barre', 'mètre', 'rouleau', 'canette', 'brique', 'morceau', 'seau', 'tablette'];
 const PACKS = ['carton', 'sac', 'paquet', 'balle', 'botte', 'pack', 'casier', 'ballot', 'fût', 'bidon', 'caisse', 'colis', 'douzaine'];
-const MOVE = { sale: 'Vente', cancel: 'Annulation de vente', purchase: 'Réception', adjust: 'Ajustement', initial: 'Stock initial' };
+const MOVE = { sale: 'Vente', cancel: 'Annulation de vente', refund: 'Retour client', purchase: 'Réception', adjust: 'Ajustement', initial: 'Stock initial' };
+const MAX_PHOTOS = 12;
 
 const blank = () => ({
   name: '',
+  name_ar: '',
+  tax_rate: '',
+  expiry_date: '',
   barcode: '',
   category_id: '',
   unit: 'pièce',
@@ -41,7 +50,7 @@ const blank = () => ({
 });
 
 const ProductEditor = {
-  components: { Icon, Sheet, PackQtyInput },
+  components: { Icon, Sheet, PackQtyInput, Scanner, PhotoButton },
   props: { id: [String, Number] },
   emits: ['close'],
   setup(props, { emit }) {
@@ -51,6 +60,13 @@ const ProductEditor = {
     const busy = ref(false);
     const newCategory = ref('');
     const canEdit = can('products.manage');
+    const scanning = ref(false);
+    const autoBarcode = ref(false);
+    const lots = ref([]);
+    // Photos de référence : celles sans id sont envoyées à l'enregistrement
+    const photos = ref([]);
+    const removedPhotos = ref([]);
+    const analyzing = ref(0);
     const load = async () => {
       if (isNew) return;
       try {
@@ -59,6 +75,9 @@ const ProductEditor = {
         f.value = {
           ...blank(),
           ...p,
+          name_ar: p.name_ar || '',
+          tax_rate: p.tax_rate ?? '',
+          expiry_date: p.expiry_date || '',
           category_id: p.category_id || '',
           has_pack: hasPack(p),
           pack_unit: p.pack_unit || 'carton',
@@ -67,12 +86,54 @@ const ProductEditor = {
           cost_price: p.cost_price ?? '',
           active: !!p.active,
         };
+        photos.value = await api.get(`/products/${props.id}/images`).catch(() => []);
+        if (can('stock.manage') || canEdit) lots.value = await api.get(`/products/${props.id}/lots`).catch(() => []);
       } catch (e) {
         toastError(e);
         emit('close');
       }
     };
     onMounted(load);
+
+    const addPhotos = async (files) => {
+      const room = MAX_PHOTOS - photos.value.length;
+      if (files.length > room) toast(`${MAX_PHOTOS} photos au maximum par produit.`, 'error');
+      for (const file of files.slice(0, Math.max(room, 0))) {
+        analyzing.value++;
+        try {
+          const a = await analyzePhoto(file);
+          photos.value.push({ key: Math.random(), ...a });
+        } catch (e) {
+          console.error(e);
+          toast('Analyse de la photo impossible sur cet appareil (modèle de reconnaissance non installé ?).', 'error', 6000);
+        } finally {
+          analyzing.value--;
+        }
+      }
+    };
+    const removePhoto = (ph) => {
+      photos.value = photos.value.filter((x) => x !== ph);
+      if (ph.id) removedPhotos.value.push(ph.id);
+    };
+    const onScan = (code) => {
+      scanning.value = false;
+      f.value.barcode = normalizeCode(code);
+      autoBarcode.value = false;
+    };
+    const genBarcodeNow = async () => {
+      if (isNew) {
+        autoBarcode.value = !autoBarcode.value;
+        return;
+      }
+      try {
+        const r = await api.post(`/products/${props.id}/barcode`);
+        f.value.barcode = r.barcode;
+        await loadProducts();
+        toast('Code-barres interne créé.', 'success');
+      } catch (e) {
+        toastError(e);
+      }
+    };
 
     const n = (v) => {
       const x = parseNum(v);
@@ -132,7 +193,10 @@ const ProductEditor = {
       if (v.has_pack && !(n(v.pack_size) > 1)) return toast(`Indiquez combien de ${plural(v.unit, 2)} contient un ${v.pack_unit}.`, 'error');
       const body = {
         name: v.name,
-        barcode: v.barcode,
+        name_ar: v.name_ar,
+        tax_rate: v.tax_rate === '' || v.tax_rate === null ? '' : n(v.tax_rate),
+        expiry_date: v.expiry_date || '',
+        barcode: normalizeCode(v.barcode),
         category_id: v.category_id || null,
         unit: v.unit,
         retail_price: n(v.retail_price),
@@ -146,8 +210,14 @@ const ProductEditor = {
       if (isNew) body.stock = n(v.stock);
       busy.value = true;
       try {
-        if (isNew) await api.post('/products', body);
+        let id = props.id;
+        if (isNew) id = (await api.post('/products', body)).id;
         else await api.put(`/products/${props.id}`, body);
+        if (autoBarcode.value && !body.barcode) await api.post(`/products/${id}/barcode`);
+        for (const pid of removedPhotos.value) await api.del(`/product-images/${pid}`);
+        for (const ph of photos.value.filter((x) => !x.id)) {
+          await api.post(`/products/${id}/images`, { embedding: ph.embedding, thumb: ph.thumb });
+        }
         await loadProducts();
         toast(isNew ? 'Produit ajouté.' : 'Produit enregistré.', 'success');
         emit('close');
@@ -174,7 +244,7 @@ const ProductEditor = {
         toastError(e);
       }
     };
-    return { isNew, f, product, busy, newCategory, canEdit, hints, asProduct, addCategory, save, archive, store, can, UNITS, PACKS, MOVE, money, qty, plural, stockText, dateTimeFr, hasPack, listPrice, round3 };
+    return { isNew, f, product, busy, newCategory, canEdit, hints, asProduct, addCategory, save, archive, store, can, UNITS, PACKS, MOVE, money, qty, plural, stockText, dateTimeFr, dateFr, hasPack, listPrice, round3, scanning, autoBarcode, onScan, genBarcodeNow, lots, photos, analyzing, addPhotos, removePhoto, MAX_PHOTOS };
   },
   template: `
     <Sheet :title="isNew ? 'Nouveau produit' : (f.name || 'Produit')" size="wide" @close="$emit('close')">
@@ -183,14 +253,21 @@ const ProductEditor = {
         <div class="form-section">
           <h3>Le produit</h3>
           <div class="form-grid">
-            <div class="field span-2"><label for="p-name">Nom du produit</label><input id="p-name" class="input" v-model="f.name" required maxlength="120" placeholder="Ex. : Huile végétale 1 L" /></div>
+            <div class="field"><label for="p-name">Nom du produit</label><input id="p-name" class="input" v-model="f.name" required maxlength="120" placeholder="Ex. : Huile végétale 1 L" /></div>
+            <div class="field"><label for="p-name-ar">Nom en arabe <span class="faint">(facultatif)</span></label><input id="p-name-ar" class="input" v-model="f.name_ar" dir="rtl" maxlength="120" placeholder="زيت نباتي 1 لتر" /><span class="hint">Affiché aux vendeurs qui utilisent la caisse en arabe, et sur les étiquettes.</span></div>
             <div class="field"><label for="p-cat">Rayon / catégorie</label>
               <select id="p-cat" class="select" v-model="f.category_id"><option value="">Sans rayon</option><option v-for="c in store.categories" :key="c.id" :value="c.id">{{ c.name }}</option></select>
             </div>
             <div class="field"><label for="p-newcat">Nouveau rayon</label>
               <div class="row"><input id="p-newcat" class="input" v-model="newCategory" placeholder="Ex. : Boissons" @keydown.enter.prevent="addCategory" /><button type="button" class="btn" @click="addCategory" :disabled="!newCategory.trim()">Créer</button></div>
             </div>
-            <div class="field span-2"><label for="p-code">Code-barres <span class="faint">(facultatif)</span></label><input id="p-code" class="input" v-model="f.barcode" maxlength="64" placeholder="Scannez ou tapez le code" autocomplete="off" /></div>
+            <div class="field span-2"><label for="p-code">Code-barres <span class="faint">(facultatif)</span></label>
+              <div class="row">
+                <input id="p-code" class="input" v-model="f.barcode" maxlength="64" :placeholder="autoBarcode ? 'Un code interne sera créé à l’enregistrement' : 'Scannez ou tapez le code'" autocomplete="off" @input="autoBarcode = false" />
+                <button type="button" class="btn icon-only" @click="scanning = true" aria-label="Scanner avec la caméra" title="Scanner avec la caméra"><Icon name="scan" /></button>
+              </div>
+              <button v-if="!f.barcode" type="button" class="linklike small" style="margin-top:6px;justify-self:start" @click="genBarcodeNow"><Icon name="barcode" size="sm" />{{ autoBarcode ? 'Code interne créé à l’enregistrement (annuler)' : 'Générer un code-barres interne' }}</button>
+            </div>
           </div>
         </div>
 
@@ -229,11 +306,36 @@ const ProductEditor = {
             </div>
             <div class="field"><span class="label">Seuil d'alerte (stock minimum)</span><PackQtyInput :product="asProduct" v-model="f.min_stock" /></div>
             <div class="field span-2" v-if="isNew"><span class="label">Stock de départ</span><PackQtyInput :product="asProduct" v-model="f.stock" /></div>
+            <div class="field" v-if="lots.length <= 1"><label for="p-exp">Date de péremption <span class="faint">(facultatif)</span></label><input id="p-exp" type="date" class="input" v-model="f.expiry_date" /><span class="hint">Les lots reçus avec une date sont vendus en commençant par celui qui périme le plus tôt.</span></div>
+            <div class="field" v-if="store.settings.tax_enabled"><label for="p-tax">Taux de TVA (%)</label><input id="p-tax" class="input num" v-model="f.tax_rate" inputmode="decimal" :placeholder="'Taux du magasin : ' + store.settings.tax_rate + ' %'" /><span class="hint">Laissez vide pour le taux du magasin ; 0 = exonéré.</span></div>
+          </div>
+          <div v-if="lots.length > 1" class="stack tight" style="margin-top:12px">
+            <span class="label">Lots en stock (du plus proche de la péremption au plus lointain)</span>
+            <div class="list" style="border:1px solid var(--line)">
+              <div v-for="l in lots" :key="l.id" class="list-row"><div class="main-col"><div class="title">{{ l.expiry_date ? 'Périme le ' + dateFr(l.expiry_date) : 'Sans date' }}<span class="faint" v-if="l.code"> · lot {{ l.code }}</span></div></div><span class="num strong">{{ stockText(asProduct, l.qty) }}</span></div>
+            </div>
           </div>
           <label class="check" v-if="!isNew"><input type="checkbox" v-model="f.active" /><span>En vente<small>Décochez pour masquer le produit en caisse sans perdre son historique.</small></span></label>
         </div>
+
+        <div class="form-section">
+          <h3><Icon name="camera" size="sm" /> Photos de référence ({{ photos.length }}/{{ MAX_PHOTOS }})</h3>
+          <p class="small muted" style="margin-bottom:8px">Pour reconnaître le produit par photo en caisse (fruits, légumes, vrac, produits sans code-barres). Ajoutez 3 à 5 photos du produit seul, sous des angles différents, avec une bonne lumière. Tout reste sur l'ordinateur du magasin.</p>
+          <div class="photo-grid">
+            <div v-for="ph in photos" :key="ph.id || ph.key" class="photo-cell">
+              <img :src="ph.thumb" alt="" class="photo-thumb" />
+              <button v-if="canEdit" type="button" class="photo-remove" @click="removePhoto(ph)" aria-label="Retirer la photo"><Icon name="x" size="sm" /></button>
+            </div>
+            <div v-if="analyzing" class="photo-thumb photo-wait">Analyse…</div>
+          </div>
+          <div class="row wrap" v-if="canEdit" style="margin-top:8px">
+            <PhotoButton label="Prendre une photo" :disabled="analyzing > 0 || photos.length >= MAX_PHOTOS" @file="addPhotos([$event])" />
+            <PhotoButton label="Depuis la galerie" icon="image" :camera="false" multiple :disabled="analyzing > 0 || photos.length >= MAX_PHOTOS" @files="addPhotos" />
+          </div>
+        </div>
         </fieldset>
       </form>
+      <Scanner v-if="scanning" @detect="onScan" @close="scanning = false" />
 
       <div v-if="product" class="stack" style="margin-top:8px">
         <div class="row between">
@@ -259,7 +361,7 @@ const ProductEditor = {
       <template #foot>
         <button v-if="!isNew && canEdit" type="button" class="btn danger" style="margin-right:auto" @click="archive">Retirer de la vente</button>
         <button type="button" class="btn" @click="$emit('close')">{{ canEdit ? 'Annuler' : 'Fermer' }}</button>
-        <button v-if="canEdit" type="submit" form="product-form" class="btn primary" :class="{ loading: busy }" :disabled="busy">Enregistrer</button>
+        <button v-if="canEdit" type="submit" form="product-form" class="btn primary" :class="{ loading: busy }" :disabled="busy || analyzing > 0">Enregistrer</button>
       </template>
     </Sheet>`,
 };
@@ -374,7 +476,7 @@ const CategoriesDialog = {
 };
 
 export default {
-  components: { Icon, Empty, Skeleton, ProductEditor, ImportDialog, CategoriesDialog },
+  components: { Icon, Empty, Skeleton, ProductEditor, ImportDialog, CategoriesDialog, Labels },
   setup() {
     const q = ref('');
     const category = ref('');
@@ -382,6 +484,7 @@ export default {
     const archived = ref(null);
     const showImport = ref(false);
     const showCats = ref(false);
+    const showLabels = ref(false);
     const loadArchived = async () => {
       try {
         archived.value = (await api.get('/products', { all: 1 })).filter((p) => !p.active);
@@ -416,7 +519,7 @@ export default {
     const close = () => setQuery({ produit: undefined });
     const margin = (p) => (p.retail_price > 0 && p.cost_price > 0 ? ((p.retail_price - p.cost_price) / p.retail_price) * 100 : null);
     const isPhone = useMedia('(max-width: 760px)');
-    return { store, q, category, filter, rows, counts, editId, open, close, showImport, showCats, isPhone, can, money, plural, percent, margin, hasPack, listPrice, sellsWholesale, stockText, stockLevel, exportUrl: api.url('/export/products.csv') };
+    return { store, q, category, filter, rows, counts, editId, open, close, showImport, showCats, showLabels, isPhone, can, money, plural, percent, margin, hasPack, listPrice, sellsWholesale, stockText, stockLevel, exportUrl: api.url('/export/products.csv') };
   },
   template: `
     <div class="page">
@@ -424,6 +527,7 @@ export default {
         <h1>Produits</h1>
         <template v-if="can('products.manage')">
           <button type="button" class="btn" @click="showCats = true"><Icon name="tag" />Rayons</button>
+          <button type="button" class="btn" @click="showLabels = true"><Icon name="barcode" />Étiquettes</button>
           <button type="button" class="btn hide-phone" @click="showImport = true"><Icon name="upload" />Importer</button>
           <a class="btn hide-phone" :href="exportUrl"><Icon name="download" />Exporter</a>
           <button type="button" class="btn primary" @click="open('nouveau')"><Icon name="plus" />Nouveau produit</button>
@@ -464,7 +568,7 @@ export default {
           </tr></thead>
           <tbody>
             <tr v-for="p in rows" :key="p.id" class="click" @click="open(p.id)">
-              <td><div class="cell-title">{{ p.name }}</div><div class="cell-sub">{{ p.barcode || '' }}<template v-if="hasPack(p)">{{ p.barcode ? ' · ' : '' }}1 {{ p.pack_unit }} = {{ p.pack_size }} {{ plural(p.unit, p.pack_size) }}</template></div></td>
+              <td><div class="cell-title">{{ p.name }}<span v-if="p.image_count" class="photo-count" :title="p.image_count + ' photo(s) de référence'"><Icon name="camera" size="sm" />{{ p.image_count }}</span></div><div class="cell-sub">{{ p.barcode || '' }}<template v-if="hasPack(p)">{{ p.barcode ? ' · ' : '' }}1 {{ p.pack_unit }} = {{ p.pack_size }} {{ plural(p.unit, p.pack_size) }}</template><template v-if="p.expiry_date"> · périme le {{ p.expiry_date.split('-').reverse().join('/') }}</template></div></td>
               <td class="hide-phone">{{ p.category_name || '—' }}</td>
               <td class="num">{{ money(p.retail_price, { bare: true }) }}<div class="cell-sub">/ {{ p.unit }}</div></td>
               <td class="num"><template v-if="sellsWholesale(p)">{{ money(listPrice(p, 'wholesale'), { bare: true }) }}<div class="cell-sub">/ {{ hasPack(p) ? p.pack_unit : p.unit }}</div></template><span v-else class="faint">—</span></td>
@@ -485,5 +589,6 @@ export default {
       <ProductEditor v-if="editId" :id="editId" :key="editId" @close="close" />
       <ImportDialog v-if="showImport" @close="showImport = false" />
       <CategoriesDialog v-if="showCats" @close="showCats = false" />
+      <Labels v-if="showLabels" @close="showLabels = false" />
     </div>`,
 };

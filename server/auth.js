@@ -25,6 +25,8 @@ export function validPin(pin) {
   return typeof pin === 'string' && /^\d{4,8}$/.test(pin);
 }
 
+export const LANGS = ['fr', 'ar', 'en'];
+
 // --- Limitation des tentatives de connexion (en mémoire) --------------------
 const attempts = new Map(); // userId -> { count, until }
 export function checkLoginAllowed(userId) {
@@ -92,12 +94,17 @@ export function currentToken(req) {
 
 const lastTouch = new Map();
 
-/** Middleware : charge req.user si la session est valide. */
+/**
+ * Middleware : charge req.user si la session est valide.
+ * Une vente faite hors ligne est renvoyée plus tard avec l'en-tête X-Session de l'employé qui l'a faite,
+ * même si un autre employé s'est connecté entre-temps sur l'appareil.
+ */
 export function loadUser(req, _res, next) {
-  const token = readCookie(req, COOKIE);
+  const header = req.headers['x-session'];
+  const token = (typeof header === 'string' && header) || readCookie(req, COOKIE);
   if (token) {
     const row = q.get(
-      `SELECT s.token, s.last_seen, u.id, u.name, u.role, u.active
+      `SELECT s.token, s.last_seen, u.id, u.name, u.role, u.active, u.lang
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token = ?`,
       token,
@@ -107,7 +114,7 @@ export function loadUser(req, _res, next) {
       if (row.last_seen < limit) {
         q.run('DELETE FROM sessions WHERE token = ?', token);
       } else {
-        req.user = { id: row.id, name: row.name, role: row.role };
+        req.user = { id: row.id, name: row.name, role: row.role, lang: row.lang || 'fr' };
         req.perms = permsFor(req.user);
         // Mise à jour de last_seen au plus une fois par minute
         const t = lastTouch.get(token) || 0;

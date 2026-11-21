@@ -1,18 +1,22 @@
 {
   "name": "grand-magasin",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Logiciel de caisse local pour magasin de vente en gros et au détail (téléphones, tablettes et ordinateurs).",
   "private": true,
   "type": "module",
   "main": "server/index.js",
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning server/index.js"
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "postinstall": "node scripts/setup-vision.mjs",
+    "setup-vision": "node scripts/setup-vision.mjs",
+    "reset-pin": "node --disable-warning=ExperimentalWarning server/reset-pin.js"
   },
   "engines": {
     "node": ">=22.13.0"
   },
   "dependencies": {
     "express": "^5.1.0",
+    "node-forge": "^1.4.3",
     "qrcode": "^1.5.4"
   }
 }

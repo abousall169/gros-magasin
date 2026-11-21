@@ -1,8 +1,10 @@
-// Point d'entrée de l'interface : coquille (menu), connexion, pages.
-import { createApp, computed, ref, watch, onMounted } from './vue.js';
-import { store, can, loadStatus, loadMe, loadProducts, connectEvents, logout, toastError } from './store.js';
+// Point d'entrée de l'interface : coquille (menu), connexion, pages, hors ligne.
+import { createApp, computed, ref, watch, onMounted, onUnmounted } from './vue.js';
+import { store, can, loadStatus, loadMe, loadProducts, connectEvents, logout, toastError, startSync, syncQueue } from './store.js';
+import { readQueue, readRejected, retryRejected, dropRejected } from './api.js';
 import { route, go } from './router.js';
-import { initials } from './format.js';
+import { initials, money, dateTimeFr } from './format.js';
+import { t, LANGS, setLang, applyLang, initLang } from './i18n.js';
 import { Icon, Sheet, Toasts, DialogHost } from './components/ui.js';
 import Login from './pages/Login.js';
 import Pos from './pages/Pos.js';
@@ -31,8 +33,45 @@ const PAGES = [
   { path: '/parametres', label: 'Paramètres', short: 'Réglages', icon: 'sliders', perm: null, comp: Settings },
 ];
 
+// Ventes hors ligne refusées par le serveur : elles restent sur l'appareil jusqu'à décision
+const RejectedSales = {
+  components: { Sheet, Icon },
+  setup() {
+    const refresh = () => {
+      store.rejected = readRejected();
+      store.pending = readQueue().length;
+    };
+    const total = (r) => (r.payload.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const when = (r) => dateTimeFr(new Date(r.at - new Date().getTimezoneOffset() * 60000).toISOString().replace('T', ' '));
+    const drop = (r) => {
+      if (!window.confirm(t('Supprimer définitivement cette vente de l’appareil ?'))) return;
+      dropRejected(r.payload.client_id);
+      refresh();
+    };
+    const retry = () => {
+      retryRejected();
+      refresh();
+      store.showRejected = false;
+      syncQueue().catch(() => {});
+    };
+    return { store, total, when, drop, retry, money };
+  },
+  template: `
+    <Sheet :title="t('Ventes hors ligne à traiter')" size="narrow" @close="store.showRejected = false">
+      <p class="small muted" style="margin-bottom:12px">{{ t('Ces ventes faites sans réseau ont été refusées par le serveur. Elles restent sur cet appareil : réessayez, ou supprimez-les.') }}</p>
+      <div class="list" v-if="store.rejected.length">
+        <div v-for="r in store.rejected" :key="r.payload.client_id" class="list-row">
+          <div class="main-col"><div class="title">{{ when(r) }} · {{ money(total(r)) }}</div><div class="sub" style="white-space:normal;color:var(--credit-ink)">{{ r.error }}</div></div>
+          <button type="button" class="icon-btn sm" @click="drop(r)" :aria-label="t('Supprimer')"><Icon name="trash" size="sm" /></button>
+        </div>
+      </div>
+      <p v-else class="small muted">{{ t('Rien à traiter.') }}</p>
+      <template #foot><button type="button" class="btn" @click="store.showRejected = false">{{ t('Fermer') }}</button><button v-if="store.rejected.length" type="button" class="btn primary" @click="retry">{{ t('Réessayer') }}</button></template>
+    </Sheet>`,
+};
+
 const App = {
-  components: { Icon, Sheet, Toasts, DialogHost, Login },
+  components: { Icon, Sheet, Toasts, DialogHost, Login, RejectedSales },
   setup() {
     const menuOpen = ref(false);
     const pages = computed(() => PAGES.filter((p) => (!p.perm || can(p.perm)) && !(p.hideIf && can(p.hideIf))));
@@ -42,8 +81,11 @@ const App = {
       const order = can('dashboard') ? ['/caisse', '/ventes', '/produits', '/clients'] : ['/caisse', '/ventes', '/clients', '/produits'];
       return order.map((p) => pages.value.find((x) => x.path === p)).filter(Boolean).slice(0, 4);
     });
-    const pageTitle = computed(() => (current.value?.path === '/parametres' && !can('settings.manage') ? 'Mon compte' : current.value?.label || ''));
-    const navLabel = (p) => (p.path === '/parametres' && !can('settings.manage') ? 'Mon compte' : p.label);
+    const account = () => !can('settings.manage');
+    const pageTitle = computed(() => (current.value?.path === '/parametres' && account() ? t('Mon compte') : t(current.value?.label || '')));
+    const navLabel = (p) => (p.path === '/parametres' && account() ? t('Mon compte') : t(p.label));
+    const navShort = (p) => (p.path === '/parametres' && account() ? t('Compte') : t(p.short));
+    const nextLang = computed(() => LANGS[(LANGS.findIndex((l) => l.id === store.lang) + 1) % LANGS.length]);
 
     // Redirection vers une page autorisée
     watch(
@@ -60,12 +102,24 @@ const App = {
         window.scrollTo(0, 0);
       },
     );
+    // Langue de l'employé connecté (choisie dans « Mon compte »)
+    watch(
+      () => store.me?.lang,
+      (l) => {
+        if (l) applyLang(l);
+      },
+    );
 
     const start = async () => {
       try {
-        const status = await loadStatus();
-        if (status.loggedIn && (await loadMe())) {
+        await loadStatus().catch((e) => {
+          if (e.status !== 0) throw e;
+        });
+        // Hors ligne, on tente quand même la session gardée en cache sur l'appareil
+        const tryMe = !store.status || store.status.offline || store.status.loggedIn;
+        if (tryMe && (await loadMe())) {
           connectEvents();
+          startSync();
           await loadProducts();
         }
       } catch (e) {
@@ -85,62 +139,81 @@ const App = {
       await logout();
     };
 
-    return { store, route, pages, current, tabs, menuOpen, pageTitle, navLabel, onLogged, signOut, initials, ROLE, can };
+    return { store, route, pages, current, tabs, menuOpen, pageTitle, navLabel, navShort, nextLang, onLogged, signOut, setLang, initials, ROLE, can };
   },
   template: `
-    <div v-if="!store.booted" class="boot">Chargement…</div>
+    <div v-if="!store.booted" class="boot">{{ t('Chargement…') }}</div>
     <Login v-else-if="!store.me" @logged="onLogged" />
     <div v-else class="shell">
-      <aside class="rail" aria-label="Menu principal">
-        <div class="rail-brand"><img class="rail-logo" src="/icons/icon.svg" :alt="store.settings.store_name" /><strong>{{ store.settings.store_name }}</strong><span v-if="store.settings.demo_data" class="demo-tag">Données de démonstration</span><span v-else>Caisse gros & détail</span></div>
+      <aside class="rail" :aria-label="t('Menu principal')">
+        <div class="rail-brand"><img class="rail-logo" src="/icons/icon.svg" :alt="store.settings.store_name" /><strong>{{ store.settings.store_name }}</strong><span v-if="store.settings.demo_data" class="demo-tag">{{ t('Données de démonstration') }}</span><span v-else>{{ t('Caisse gros & détail') }}</span></div>
         <nav class="nav">
           <a v-for="p in pages" :key="p.path" :href="'#' + p.path" :class="{ active: current && current.path === p.path }" :aria-current="current && current.path === p.path ? 'page' : null">
-            <Icon :name="p.icon" /><span class="lbl">{{ navLabel(p) }}</span><span class="lbl-short">{{ p.path === '/parametres' && !can('settings.manage') ? 'Compte' : p.short }}</span>
+            <Icon :name="p.icon" /><span class="lbl">{{ navLabel(p) }}</span><span class="lbl-short">{{ navShort(p) }}</span>
           </a>
         </nav>
         <div class="rail-foot">
-          <div class="conn" :class="{ off: !store.online }"><i></i><span>{{ store.online ? 'Connecté au serveur' : 'Serveur injoignable' }}</span></div>
+          <button v-if="store.pending || store.rejected.length" type="button" class="sync-pill" :class="{ bad: store.rejected.length }" @click="store.rejected.length ? (store.showRejected = true) : null">
+            <Icon :name="store.rejected.length ? 'alert' : 'clock'" size="sm" />
+            <span v-if="store.rejected.length">{{ t('{n} vente(s) à traiter', { n: store.rejected.length }) }}</span>
+            <span v-else>{{ t('{n} vente(s) en attente d’envoi', { n: store.pending }) }}</span>
+          </button>
+          <div class="conn" :class="{ off: !store.online }"><i></i><span>{{ store.online ? t('Connecté au serveur') : t('Hors ligne') }}</span></div>
           <div class="rail-user">
             <span class="avatar">{{ initials(store.me.name) }}</span>
-            <div class="who ellipsis"><strong class="ellipsis">{{ store.me.name }}</strong><span>{{ ROLE[store.me.role] }}</span></div>
+            <div class="who ellipsis"><strong class="ellipsis">{{ store.me.name }}</strong><span>{{ t(ROLE[store.me.role]) }}</span></div>
           </div>
-          <button type="button" class="btn-rail" @click="signOut"><Icon name="swap" /><span>Changer d'utilisateur</span></button>
+          <button type="button" class="btn-rail" @click="setLang(nextLang.id)" :title="t('Langue')"><Icon name="globe" /><span>{{ nextLang.label }}</span></button>
+          <button type="button" class="btn-rail" @click="signOut"><Icon name="swap" /><span>{{ t('Changer d’utilisateur') }}</span></button>
         </div>
       </aside>
 
       <div class="main">
         <header class="topbar">
           <h1>{{ pageTitle }}</h1>
-          <span v-if="store.settings.demo_data" class="demo-tag" style="margin-top:0">Démo</span>
+          <span v-if="store.settings.demo_data" class="demo-tag" style="margin-top:0">{{ t('Démo') }}</span>
+          <button v-if="store.pending || store.rejected.length" type="button" class="sync-pill" :class="{ bad: store.rejected.length }" @click="store.rejected.length ? (store.showRejected = true) : null">
+            <Icon :name="store.rejected.length ? 'alert' : 'clock'" size="sm" />{{ store.rejected.length || store.pending }}
+          </button>
           <span class="conn" :class="{ off: !store.online }" v-if="!store.online"><i></i></span>
-          <button type="button" class="icon-btn" @click="signOut" aria-label="Changer d'utilisateur"><Icon name="swap" /></button>
+          <button type="button" class="icon-btn lang-btn" @click="setLang(nextLang.id)" :aria-label="t('Langue')">{{ nextLang.short }}</button>
+          <button type="button" class="icon-btn" @click="signOut" :aria-label="t('Changer d’utilisateur')"><Icon name="swap" /></button>
         </header>
-        <div v-if="!store.online" class="offline-banner" role="status"><Icon name="wifi" size="sm" />Connexion au serveur perdue. Vérifiez le Wi-Fi ; les données se mettront à jour au retour de la connexion.</div>
+        <div v-if="!store.online" class="offline-banner" role="status"><Icon name="wifi" size="sm" />{{ store.pending ? t('Hors ligne : les ventes sont gardées sur cet appareil ({n} en attente) et partiront au retour du réseau.', { n: store.pending }) : t('Hors ligne : vous pouvez continuer à vendre. Les ventes partiront au retour du réseau.') }}</div>
         <component v-if="current" :is="current.comp" :key="current.path" />
       </div>
 
-      <nav class="tabbar" aria-label="Navigation">
-        <a v-for="t in tabs" :key="t.path" :href="'#' + t.path" :class="{ on: current && current.path === t.path }">
-          <Icon :name="t.icon" /><span>{{ t.short }}</span>
+      <nav class="tabbar" :aria-label="t('Navigation')">
+        <a v-for="tb in tabs" :key="tb.path" :href="'#' + tb.path" :class="{ on: current && current.path === tb.path }">
+          <Icon :name="tb.icon" /><span>{{ navShort(tb) }}</span>
         </a>
-        <button type="button" :class="{ on: current && !tabs.includes(current) }" @click="menuOpen = true"><Icon name="menu" /><span>Plus</span></button>
+        <button type="button" :class="{ on: current && !tabs.includes(current) }" @click="menuOpen = true"><Icon name="menu" /><span>{{ t('Plus') }}</span></button>
       </nav>
 
-      <Sheet v-if="menuOpen" title="Menu" @close="menuOpen = false">
+      <Sheet v-if="menuOpen" :title="t('Menu')" @close="menuOpen = false">
         <div class="list">
           <a v-for="p in pages" :key="p.path" :href="'#' + p.path" class="list-row click" style="text-decoration:none;color:inherit">
-            <Icon :name="p.icon" /><div class="main-col"><div class="title">{{ navLabel(p) }}</div></div><Icon name="chevronRight" size="sm" />
+            <Icon :name="p.icon" /><div class="main-col"><div class="title">{{ navLabel(p) }}</div></div><Icon name="chevronRight" size="sm" class="flip-rtl" />
           </a>
         </div>
         <div class="row" style="margin-top:16px">
           <span class="avatar">{{ initials(store.me.name) }}</span>
-          <div class="grow"><strong>{{ store.me.name }}</strong><div class="xsmall faint">{{ ROLE[store.me.role] }}</div></div>
-          <button type="button" class="btn" @click="signOut"><Icon name="swap" />Changer d'utilisateur</button>
+          <div class="grow"><strong>{{ store.me.name }}</strong><div class="xsmall faint">{{ t(ROLE[store.me.role]) }}</div></div>
+          <button type="button" class="btn" @click="signOut"><Icon name="swap" />{{ t('Changer d’utilisateur') }}</button>
         </div>
       </Sheet>
+      <RejectedSales v-if="store.showRejected" />
     </div>
     <Toasts />
     <DialogHost />`,
 };
 
-createApp(App).mount('#app');
+initLang();
+const app = createApp(App);
+app.config.globalProperties.t = t;
+app.mount('#app');
+
+// Service worker : l'application s'ouvre même sans réseau (exige HTTPS sur les téléphones)
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

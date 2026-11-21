@@ -1,7 +1,8 @@
 // Composants d'interface partagés.
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from '../vue.js';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent } from '../vue.js';
 import { store, closeDialog } from '../store.js';
 import { today, addDays, monthStart, norm, hasPack, plural, parseNum, round3, unitQty, stockText } from '../format.js';
+import { sameCode } from '../barcode.js';
 
 // ---- Icônes (tracé unique, trait arrondi) --------------------------------------
 const PATHS = {
@@ -49,6 +50,14 @@ const PATHS = {
   store: '<path d="M3 9 4.5 4h15L21 9"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0Z"/><path d="M5 13v8h14v-8"/><path d="M10 21v-5h4v5"/>',
   tag: '<path d="M12.59 2.59A2 2 0 0 0 11.17 2H4a2 2 0 0 0-2 2v7.17a2 2 0 0 0 .59 1.42l8.82 8.82a2 2 0 0 0 2.83 0l7.17-7.17a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   coins: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z"/>',
+  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  barcode: '<path d="M3 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M17 5v14"/><path d="M21 5v14"/>',
+  unlock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.75-1.4"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>',
 };
 
 export const Icon = {
@@ -108,7 +117,7 @@ export const Sheet = {
           <header class="sheet-head" :class="{ band }">
             <h2 class="ellipsis">{{ title }}</h2>
             <slot name="head"></slot>
-            <button type="button" class="icon-btn" @click="$emit('close')" aria-label="Fermer"><Icon name="x" /></button>
+            <button type="button" class="icon-btn" @click="$emit('close')" :aria-label="t('Fermer')"><Icon name="x" /></button>
           </header>
           <div class="sheet-body"><slot></slot></div>
           <footer class="sheet-foot" v-if="$slots.foot"><slot name="foot"></slot></footer>
@@ -154,8 +163,8 @@ export const DialogHost = {
         </div>
       </form>
       <template #foot>
-        <button type="button" class="btn" @click="closeDialog(false)">{{ d.cancel || 'Annuler' }}</button>
-        <button type="submit" form="dlg-form" class="btn" :class="d.danger ? 'danger solid' : 'primary'">{{ d.confirm || 'Confirmer' }}</button>
+        <button type="button" class="btn" @click="closeDialog(false)">{{ d.cancel || t('Annuler') }}</button>
+        <button type="submit" form="dlg-form" class="btn" :class="d.danger ? 'danger solid' : 'primary'">{{ d.confirm || t('Confirmer') }}</button>
       </template>
     </Sheet>`,
 };
@@ -179,7 +188,7 @@ export const Skeleton = {
 
 // ---- Choix de période -----------------------------------------------------------------
 export const PERIODS = [
-  { id: 'today', label: "Aujourd'hui" },
+  { id: 'today', label: 'Aujourd’hui' },
   { id: 'yesterday', label: 'Hier' },
   { id: '7d', label: '7 jours' },
   { id: 'month', label: 'Ce mois' },
@@ -221,12 +230,12 @@ export const PeriodPicker = {
   template: `
     <div class="period">
       <div class="chips">
-        <button v-for="p in list" :key="p.id" type="button" class="chip" :class="{ on: modelValue.id === p.id }" @click="pick(p.id)">{{ p.label }}</button>
+        <button v-for="p in list" :key="p.id" type="button" class="chip" :class="{ on: modelValue.id === p.id }" @click="pick(p.id)">{{ t(p.label) }}</button>
       </div>
       <template v-if="modelValue.id === 'custom'">
-        <input type="date" class="input" :value="modelValue.from" @change="setDate('from', $event.target.value)" aria-label="Du" />
-        <span class="muted small">au</span>
-        <input type="date" class="input" :value="modelValue.to" @change="setDate('to', $event.target.value)" aria-label="Au" />
+        <input type="date" class="input" :value="modelValue.from" @change="setDate('from', $event.target.value)" :aria-label="t('Du')" />
+        <span class="muted small">{{ t('au') }}</span>
+        <input type="date" class="input" :value="modelValue.to" @change="setDate('to', $event.target.value)" :aria-label="t('Au')" />
       </template>
     </div>`,
 };
@@ -297,17 +306,18 @@ export const PackQtyInput = {
 
 // ---- Sélecteur de produit (recherche dans le catalogue en cache) ---------------------------
 export const ProductSearch = {
-  components: { Icon },
+  components: { Icon, Scanner: defineAsyncComponent(() => import('./camera.js').then((m) => m.Scanner)) },
   props: { placeholder: { type: String, default: 'Rechercher un produit (nom ou code)…' } },
   emits: ['pick'],
   setup(props, { emit }) {
     const q = ref('');
+    const scanning = ref(false);
     const results = computed(() => {
       const words = norm(q.value).split(/\s+/).filter(Boolean);
       if (!words.length) return [];
       return store.products
         .filter((p) => {
-          const hay = norm(`${p.name} ${p.barcode || ''} ${p.category_name || ''}`);
+          const hay = norm(`${p.name} ${p.name_ar || ''} ${p.barcode || ''} ${p.category_name || ''}`);
           return words.every((w) => hay.includes(w));
         })
         .slice(0, 30);
@@ -317,18 +327,28 @@ export const ProductSearch = {
       q.value = '';
     };
     const enter = () => {
-      const exact = store.products.find((p) => p.barcode && p.barcode === q.value.trim());
+      const exact = store.products.find((p) => sameCode(p.barcode, q.value));
       if (exact) return pick(exact);
       if (results.value.length === 1) pick(results.value[0]);
     };
-    return { q, results, pick, enter, stockText };
+    const onScan = (code) => {
+      scanning.value = false;
+      const p = store.products.find((x) => sameCode(x.barcode, code));
+      if (p) pick(p);
+      else q.value = code;
+    };
+    return { q, results, pick, enter, stockText, scanning, onScan };
   },
   template: `
     <div class="stack tight">
-      <div class="input-affix">
-        <Icon name="search" />
-        <input class="input" v-model="q" :placeholder="placeholder" @keydown.enter.prevent="enter" autocomplete="off" />
+      <div class="row">
+        <div class="input-affix grow">
+          <Icon name="search" />
+          <input class="input" v-model="q" :placeholder="placeholder" @keydown.enter.prevent="enter" autocomplete="off" />
+        </div>
+        <button type="button" class="btn icon-only" @click="scanning = true" :aria-label="t('Scanner')" :title="t('Scanner')"><Icon name="scan" /></button>
       </div>
+      <Scanner v-if="scanning" @detect="onScan" @close="scanning = false" />
       <div class="list result-box" v-if="q && results.length">
         <button type="button" class="list-row" v-for="p in results" :key="p.id" @click="pick(p)">
           <div class="main-col"><div class="title">{{ p.name }}</div><div class="sub">{{ p.category_name || 'Sans rayon' }} · stock {{ stockText(p) }}</div></div>

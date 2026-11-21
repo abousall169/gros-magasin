@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from '../vue.js';
 import { api } from '../api.js';
 import { store, can, onChange, toast, toastError, ask, CASH } from '../store.js';
 import { money, parseNum, when } from '../format.js';
+import { t, payLabel } from '../i18n.js';
 import { Icon, Sheet, Empty, Skeleton, PeriodPicker, periodRange } from '../components/ui.js';
 
 export default {
@@ -43,12 +44,12 @@ export default {
     const save = async () => {
       const f = form.value;
       const amount = parseNum(f.amount);
-      if (!(amount > 0)) return toast('Montant invalide.', 'error');
+      if (!(amount > 0)) return toast(t('Montant invalide.'), 'error');
       f.busy = true;
       try {
         await api.post('/expenses', { amount, category: f.category, method: f.method, note: f.note });
         form.value = null;
-        toast('Dépense enregistrée.', 'success');
+        toast(t('Dépense enregistrée.'), 'success');
         load();
       } catch (e) {
         toastError(e);
@@ -56,7 +57,7 @@ export default {
       }
     };
     const remove = async (e) => {
-      if (!(await ask({ title: 'Supprimer cette dépense ?', message: `${e.category} — ${money(e.amount)}`, confirm: 'Supprimer', danger: true }))) return;
+      if (!(await ask({ title: t('Supprimer cette dépense ?'), message: `${e.category} — ${money(e.amount)}`, confirm: t('Supprimer'), danger: true }))) return;
       try {
         await api.del(`/expenses/${e.id}`);
         load();
@@ -64,17 +65,17 @@ export default {
         toastError(err);
       }
     };
-    return { store, period, rows, categories, form, total, byCat, start, save, remove, can, money, when };
+    return { store, period, rows, categories, form, total, byCat, start, save, remove, can, money, when, payLabel };
   },
   template: `
     <div class="page">
       <div class="page-head">
-        <h1>Dépenses</h1>
-        <button type="button" class="btn primary" @click="start"><Icon name="plus" />Nouvelle dépense</button>
+        <h1>{{ t('Dépenses') }}</h1>
+        <button type="button" class="btn primary" @click="start"><Icon name="plus" />{{ t('Nouvelle dépense') }}</button>
       </div>
       <div class="toolbar"><PeriodPicker v-model="period" /></div>
       <div class="summary-strip" v-if="rows">
-        <span>Total <b>{{ money(total) }}</b></span>
+        <span>{{ t('Total') }} <b>{{ money(total) }}</b></span>
         <span v-for="[c, v] in byCat.slice(0, 4)" :key="c">{{ c }} <b>{{ money(v) }}</b></span>
       </div>
       <Skeleton v-if="!rows" />
@@ -82,25 +83,25 @@ export default {
         <div v-for="e in rows" :key="e.id" class="list-row">
           <div class="main-col">
             <div class="title">{{ e.category }}<span v-if="e.note" class="faint"> · {{ e.note }}</span></div>
-            <div class="sub">{{ when(e.created_at) }} · {{ e.method }} · {{ e.user_name }}</div>
+            <div class="sub">{{ when(e.created_at) }} · {{ payLabel(e.method) }} · {{ e.user_name }}</div>
           </div>
           <div class="end num strong">{{ money(e.amount) }}</div>
-          <button v-if="can('expenses.manage')" type="button" class="icon-btn sm" @click="remove(e)" aria-label="Supprimer"><Icon name="trash" size="sm" /></button>
+          <button v-if="can('expenses.manage')" type="button" class="icon-btn sm" @click="remove(e)" :aria-label="t('Supprimer')"><Icon name="trash" size="sm" /></button>
         </div>
       </div>
-      <Empty v-else icon="wallet" title="Aucune dépense sur cette période" text="Notez ici l'argent sorti de la caisse (transport, manutention, repas…) pour que la caisse du soir tombe juste." />
+      <Empty v-else icon="wallet" :title="t('Aucune dépense sur cette période')" :text="t('Notez ici l’argent sorti de la caisse (transport, manutention, repas…) pour que la caisse du soir tombe juste.')" />
 
-      <Sheet v-if="form" title="Nouvelle dépense" size="narrow" @close="form = null">
+      <Sheet v-if="form" :title="t('Nouvelle dépense')" size="narrow" @close="form = null">
         <form id="exp-form" class="stack" @submit.prevent="save">
-          <div class="field"><label for="ex-amount">Montant</label><input id="ex-amount" class="input num" v-model="form.amount" inputmode="decimal" required autofocus style="font-size:1.25rem;font-weight:700" /></div>
-          <div class="field"><label for="ex-cat">Catégorie</label><input id="ex-cat" class="input" v-model="form.category" list="exp-cats" maxlength="60" required /><datalist id="exp-cats"><option v-for="c in categories" :key="c" :value="c"></option></datalist></div>
-          <div class="field"><span class="label">Payé par</span>
-            <div class="methods"><button v-for="m in store.paymentMethods" :key="m" type="button" class="method" :class="{ on: form.method === m }" @click="form.method = m">{{ m }}</button></div>
-            <span class="hint">« Espèces » = argent pris dans la caisse : il sera déduit de la caisse du jour.</span>
+          <div class="field"><label for="ex-amount">{{ t('Montant') }}</label><input id="ex-amount" class="input num" v-model="form.amount" inputmode="decimal" required autofocus style="font-size:1.25rem;font-weight:700" /></div>
+          <div class="field"><label for="ex-cat">{{ t('Catégorie') }}</label><input id="ex-cat" class="input" v-model="form.category" list="exp-cats" maxlength="60" required /><datalist id="exp-cats"><option v-for="c in categories" :key="c" :value="c"></option></datalist></div>
+          <div class="field"><span class="label">{{ t('Payé par') }}</span>
+            <div class="methods"><button v-for="m in store.paymentMethods" :key="m" type="button" class="method" :class="{ on: form.method === m }" @click="form.method = m">{{ payLabel(m) }}</button></div>
+            <span class="hint">{{ t('« Espèces » = argent pris dans la caisse : il sera déduit de la caisse du jour.') }}</span>
           </div>
-          <div class="field"><label for="ex-note">Détail</label><input id="ex-note" class="input" v-model="form.note" maxlength="300" placeholder="Ex. : taxi livraison Boutique Awa" /></div>
+          <div class="field"><label for="ex-note">{{ t('Détail') }}</label><input id="ex-note" class="input" v-model="form.note" maxlength="300" :placeholder="t('Ex. : taxi livraison Boutique Awa')" /></div>
         </form>
-        <template #foot><button type="button" class="btn" @click="form = null">Annuler</button><button type="submit" form="exp-form" class="btn primary" :class="{ loading: form.busy }" :disabled="form.busy">Enregistrer</button></template>
+        <template #foot><button type="button" class="btn" @click="form = null">{{ t('Annuler') }}</button><button type="submit" form="exp-form" class="btn primary" :class="{ loading: form.busy }" :disabled="form.busy">{{ t('Enregistrer') }}</button></template>
       </Sheet>
     </div>`,
 };

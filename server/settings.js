@@ -1,6 +1,6 @@
 // Paramètres du magasin et droits d'accès par rôle.
 import { q } from './db.js';
-import { bad, str, bool, int } from './util.js';
+import { bad, str, bool, int, num } from './util.js';
 
 export const CASH = 'Espèces';
 
@@ -20,6 +20,22 @@ export const DEFAULT_SETTINGS = {
   payment_methods: ['Mobile Money', 'Carte bancaire', 'Virement / Chèque'],
   phone_country_code: '',
   demo_data: false,
+  tax_enabled: false,
+  tax_rate: 18,
+  cashier_max_discount: 100,
+  printer: '',
+  auto_print: false,
+  printer_cut: true,
+  cash_drawer: false,
+};
+
+/** Remboursement d'un retour en déduction de la dette du client. */
+export const ACCOUNT_REFUND = 'Compte client';
+
+const percent = (label) => (v) => {
+  const n = num(v, NaN);
+  if (!(n >= 0 && n <= 100)) bad(`${label} invalide (entre 0 et 100).`);
+  return Math.round(n * 100) / 100;
 };
 
 // Validation de chaque clé modifiable
@@ -54,6 +70,18 @@ const VALIDATORS = {
   },
   phone_country_code: (v) => (str(v, 4) || '').replace(/\D/g, ''),
   demo_data: bool,
+  tax_enabled: bool,
+  tax_rate: percent('Taux de TVA'),
+  cashier_max_discount: percent('Remise maximale'),
+  // usb:<nom de l'imprimante Windows> ou tcp:<adresse IP>[:port]
+  printer: (v) => {
+    const p = str(v, 200) || '';
+    if (p && !/^(usb:.+|tcp:[\w.-]+(:\d{1,5})?)$/.test(p)) bad("Adresse d'imprimante invalide.");
+    return p;
+  },
+  auto_print: bool,
+  printer_cut: bool,
+  cash_drawer: bool,
 };
 
 let cached = null;
@@ -119,6 +147,7 @@ const MANAGER = [
   'cash.all',
   'price.edit',
   'credit.sell',
+  'discount.unlimited',
 ];
 const ADMIN = [...MANAGER, 'settings.manage', 'users.manage', 'backup', 'payments.delete'];
 
