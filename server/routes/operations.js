@@ -303,13 +303,23 @@ r.post('/expenses', requirePerm('expenses.add'), (req, res) => {
     str(req.body?.note, 300),
     nowLocal(),
   );
-  broadcast('expenses');
+  broadcast('expenses', 'cash');
   res.json({ id: e.id });
 });
 
-r.delete('/expenses/:id', requirePerm('expenses.manage'), (req, res) => {
-  q.run('DELETE FROM expenses WHERE id = ?', int(req.params.id));
-  broadcast('expenses');
+// Le gérant supprime n'importe quelle dépense ; le caissier seulement une des siennes (erreur de saisie),
+// tant que sa caisse est ouverte : une fois la caisse clôturée, la dépense reste.
+r.delete('/expenses/:id', requirePerm('expenses.add', 'expenses.manage'), (req, res) => {
+  const e = q.get('SELECT * FROM expenses WHERE id = ?', int(req.params.id));
+  if (!e) notFound('Dépense introuvable.');
+  if (!req.perms.has('expenses.manage')) {
+    const open = q.get("SELECT opened_at FROM cash_sessions WHERE status = 'open' AND user_id = ?", req.user.id);
+    if (e.user_id !== req.user.id || !open || e.created_at < open.opened_at) {
+      forbidden('Seul le gérant peut supprimer cette dépense.');
+    }
+  }
+  q.run('DELETE FROM expenses WHERE id = ?', e.id);
+  broadcast('expenses', 'cash');
   res.json({ ok: true });
 });
 

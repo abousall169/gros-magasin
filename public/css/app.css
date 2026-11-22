@@ -3228,16 +3228,60 @@ label.btn {
   font-size: var(--t-sm);
   vertical-align: middle;
 }
-.order-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--s4);
+.desk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
 }
-.order-card {
+.till-alert {
+  align-items: center;
+  margin-bottom: var(--s4);
+}
+.till-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: calc(-1 * var(--s3)) 0 var(--s4);
+  color: var(--ink-2);
+}
+.till-strip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--paid);
+}
+.till-h {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+.till-h h3 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--t-md);
+}
+.chips.wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+  margin-bottom: var(--s2);
+}
+
+/* Liste des ventes à encaisser : une ligne sur toute la largeur, cliquable en entier */
+.order-list {
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
-  padding: var(--s4);
+  gap: var(--s3);
+}
+.order-row {
+  display: grid;
+  grid-template-columns: minmax(84px, auto) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--s5);
+  width: 100%;
+  min-height: 84px;
+  padding: var(--s4) var(--s5);
   border: 1px solid var(--line);
   border-inline-start: 6px solid var(--mode);
   border-radius: var(--r-md);
@@ -3246,63 +3290,111 @@ label.btn {
   text-align: start;
   font: inherit;
   cursor: pointer;
-  transition: box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
+  transition: box-shadow 0.15s var(--ease), background 0.15s;
 }
-.order-card:hover {
-  box-shadow: 0 6px 18px rgba(20, 24, 50, 0.12);
+.order-row:hover {
+  background: var(--mode-soft);
+  box-shadow: 0 6px 18px rgba(20, 24, 50, 0.1);
 }
-.order-card:active {
-  transform: scale(0.99);
+.order-row:active {
+  transform: scale(0.997);
 }
-.order-card:focus-visible {
+.order-row:focus-visible {
   outline: 3px solid var(--mode);
   outline-offset: 2px;
 }
-.order-card .oc-top {
+.order-row .or-no {
   display: flex;
-  align-items: center;
-  gap: var(--s2);
+  flex-direction: column;
+  line-height: 1.2;
 }
-.order-card .oc-no {
-  font-size: var(--t-lg);
+.order-row .or-no b {
+  font-size: var(--t-xl);
   font-weight: 800;
 }
-.order-card .oc-time {
+.order-row .or-no small {
   color: var(--ink-3);
   font-size: var(--t-sm);
-  font-variant-numeric: tabular-nums;
 }
-.order-card .oc-total {
-  font-size: var(--t-2xl);
-  line-height: 1.1;
+.order-row .or-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
-.order-card .oc-who {
-  color: var(--ink-2);
-  font-size: var(--t-sm);
-}
-.order-card .oc-items {
-  color: var(--ink-3);
-  font-size: var(--t-sm);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.order-card .oc-go {
+.order-row .or-who {
   display: flex;
   align-items: center;
-  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--ink-2);
+}
+.order-row .or-who b {
+  color: var(--ink);
+}
+.order-row .or-items {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.order-row .or-total {
+  font-size: var(--t-2xl);
+  font-weight: 800;
+  white-space: nowrap;
+}
+.order-row .or-go {
+  display: flex;
+  align-items: center;
   gap: var(--s1);
-  min-height: 44px;
-  margin-top: var(--s1);
+  min-height: 48px;
+  padding: 0 var(--s5);
   border-radius: var(--r-sm);
   background: var(--mode);
   color: var(--mode-on);
   font-weight: 700;
+  white-space: nowrap;
 }
 @media (max-width: 720px) {
-  .order-grid {
-    grid-template-columns: 1fr;
-    gap: var(--s3);
+  .order-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'no total' 'main main' 'go go';
+    gap: var(--s2) var(--s3);
+    padding: var(--s3) var(--s4);
+  }
+  .order-row .or-no {
+    grid-area: no;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--s2);
+  }
+  .order-row .or-no b {
+    font-size: var(--t-lg);
+  }
+  .order-row .or-main {
+    grid-area: main;
+  }
+  .order-row .or-items {
+    white-space: normal;
+  }
+  .order-row .or-total {
+    grid-area: total;
+    font-size: var(--t-xl);
+  }
+  .order-row .or-go {
+    grid-area: go;
+    justify-content: center;
+    min-height: 44px;
+  }
+  .desk-actions {
+    width: 100%;
+  }
+  .desk-actions .btn {
+    flex: 1;
+  }
+  /* Le bouton « Ouvrir ma caisse » est déjà juste au-dessus */
+  .till-alert .btn {
+    display: none;
   }
 }

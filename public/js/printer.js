@@ -4,7 +4,7 @@
 import { api } from './api.js';
 import { store, CASH } from './store.js';
 import { t, pname, payLabel } from './i18n.js';
-import { money, qty, plural, dateTimeFr, saleNo, MODE_LABEL } from './format.js';
+import { money, qty, plural, dateTimeFr, timeFr, saleNo, MODE_LABEL } from './format.js';
 import { bars, encode, humanReadable } from './barcode.js';
 
 const FONT = '"Noto Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif';
@@ -223,6 +223,23 @@ export function sendSessionReport(session) {
   tk.row(t('Espèces attendues'), money(session.expected), 24, true);
   tk.row(t('Espèces comptées'), money(session.counted), 24, true);
   tk.row(t('Écart'), money(session.difference, { sign: true }), 26, true);
+  if (b.count != null) {
+    tk.rule();
+    tk.row(`${t('Ventes encaissées')} (${b.count})`, money(b.sales_total, { bare: true }));
+    if (b.credit > 0) tk.row(t('dont à crédit'), money(b.credit, { bare: true }));
+  }
+  if (b.methods?.length) {
+    tk.start(t('Encaissé hors espèces'), 20, true);
+    for (const m of b.methods) tk.row(payLabel(m.method), money(m.amount, { bare: true }));
+  }
+  if (b.expense_items?.length) {
+    tk.rule();
+    tk.start(t('Dépenses'), 20, true);
+    for (const e of b.expense_items) {
+      tk.row(`${timeFr(e.created_at)} ${e.category}${e.method !== CASH ? ` (${payLabel(e.method)})` : ''}`, money(e.amount, { bare: true }));
+      if (e.note) tk.start(`  ${e.note}`, 18);
+    }
+  }
   if (session.note) tk.start(session.note, 20);
   tk.gap(10);
   tk.start(`${t('Clôturée par')} ${session.closed_by_name || ''}`, 20);

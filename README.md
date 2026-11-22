@@ -109,8 +109,15 @@ pour que l'adresse ne change pas d'un jour à l'autre.
 - **Vendeur et caissier** : le vendeur prépare le panier du client puis touche **Envoyer à la caisse** : un numéro
   de commande s'affiche, le client le donne au caissier. Plusieurs vendeurs peuvent envoyer en même temps.
   Le caissier a un écran à part, **« Ventes à encaisser »** : la liste se remplit toute seule (avec une notification),
-  chaque vente montre son numéro, le total, le vendeur, le client et les articles. Il touche une vente, saisit le
-  paiement et valide : il ne peut ni modifier les articles, les prix ou le client, ni vendre lui-même.
+  chaque vente occupe une ligne sur toute la largeur (numéro, vendeur, client, articles, total) et se touche
+  n'importe où. Il saisit le paiement et valide : il ne peut ni modifier les articles, les prix ou le client,
+  ni vendre lui-même.
+- **Caisse du caissier** : sur le même écran, **Ouvrir ma caisse** le matin avec le fond de caisse ;
+  **Sortie d'argent** pour noter l'argent pris dans le tiroir (transport, repas…, avec le motif) ;
+  **Fermer ma caisse** le soir : le logiciel montre les espèces attendues (fond + ventes en espèces − sorties),
+  les encaissements Mobile Money / carte à vérifier à part et la liste des sorties d'argent ; le caissier saisit
+  les espèces comptées, voit l'écart, ferme et **le ticket de clôture s'imprime** (avec le détail des sorties).
+  Une sortie saisie par erreur peut être supprimée tant que la caisse est ouverte ; après, seul le gérant peut.
   Le stock ne baisse qu'à l'encaissement. Tant qu'elle n'est pas encaissée, le vendeur peut **reprendre** sa commande
   (le client ajoute un article) ou l'annuler. La vente garde les deux noms : les rapports « par vendeur » comptent
   le vendeur, la clôture de caisse compte le caissier.

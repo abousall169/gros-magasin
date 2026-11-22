@@ -51,7 +51,35 @@ export function cashBreakdown(session, until = nowLocal()) {
   );
   const opening = round2(session.opening_float);
   const expected = round2(opening + sales + payments - refunds - expenses - suppliers);
-  return { opening_float: opening, sales, payments, refunds, expenses, suppliers, expected };
+  // Détail pour la clôture imprimée : nombre de ventes, encaissements hors espèces, dépenses une par une
+  const done = q.get(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total, COALESCE(SUM(total - paid), 0) AS credit FROM sales s
+      WHERE s.status = 'completed' AND s.created_at >= ? AND s.created_at <= ?${uf('s.user_id')}`,
+    from,
+    until,
+  );
+  const methods = q
+    .all(
+      `SELECT method, ROUND(SUM(amount), 2) AS amount FROM (
+         SELECT p.method, p.amount FROM sale_payments p JOIN sales s ON s.id = p.sale_id
+          WHERE s.status = 'completed' AND s.created_at >= ? AND s.created_at <= ?${uf('s.user_id')}
+         UNION ALL
+         SELECT method, amount FROM customer_payments WHERE created_at >= ? AND created_at <= ?${uf('user_id')}
+       ) WHERE method <> ? GROUP BY method ORDER BY amount DESC`,
+      from,
+      until,
+      from,
+      until,
+      CASH,
+    )
+    .map((m) => ({ method: m.method, amount: round2(m.amount) }));
+  const expenseItems = q.all(
+    `SELECT id, category, amount, method, note, created_at FROM expenses
+      WHERE created_at >= ? AND created_at <= ?${uf('user_id')} ORDER BY id LIMIT 200`,
+    from,
+    until,
+  );
+  return { opening_float: opening, sales, payments, refunds, expenses, suppliers, expected, count: Number(done.count) || 0, sales_total: round2(done.total), credit: round2(done.credit), methods, expense_items: expenseItems };
 }
 
 const SESSION_SELECT = `

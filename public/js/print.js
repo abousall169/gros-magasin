@@ -2,7 +2,7 @@
 // factures A4, relevés, clôtures, étiquettes ; partage par WhatsApp ou SMS.
 import { store, CASH, toast } from './store.js';
 import { t, pname, payLabel } from './i18n.js';
-import { money, qty, dateTimeFr, dateFr, saleNo, amountInWords, MODE_LABEL, plural, dayLong } from './format.js';
+import { money, qty, dateTimeFr, timeFr, dateFr, saleNo, amountInWords, MODE_LABEL, plural, dayLong } from './format.js';
 import { hasThermal, sendSaleTicket, sendPaymentReceipt, sendSessionReport } from './printer.js';
 import { barcodeSvg, encode } from './barcode.js';
 
@@ -273,6 +273,9 @@ export function printSession(session) {
       ${line(t('Espèces comptées'), session.counted, true)}
       ${line(t('Écart'), session.difference, true)}
     </table>
+    ${b.count != null ? `<div class="hr"></div><table>${line(`${t('Ventes encaissées')} (${b.count})`, b.sales_total)}${b.credit > 0 ? line(t('dont à crédit'), b.credit) : ''}</table>` : ''}
+    ${b.methods?.length ? `<div><b>${esc(t('Encaissé hors espèces'))}</b></div><table>${b.methods.map((m) => line(payLabel(m.method), m.amount)).join('')}</table>` : ''}
+    ${b.expense_items?.length ? `<div class="hr"></div><div><b>${esc(t('Dépenses'))}</b></div><table>${b.expense_items.map((e) => line(`${timeFr(e.created_at)} ${e.category}${e.note ? ` · ${e.note}` : ''}${e.method !== CASH ? ` (${payLabel(e.method)})` : ''}`, e.amount)).join('')}</table>` : ''}
     ${session.note ? `<div>${esc(session.note)}</div>` : ''}
     <div class="hr"></div>
     <div>${esc(t('Clôturée par'))} ${esc(session.closed_by_name || '')}</div>

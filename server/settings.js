@@ -133,9 +133,10 @@ export const ROLES = {
 // Le vendeur prépare le panier et l'envoie à la caisse ; il peut vendre plus cher que le prix fixé par le gérant,
 // jamais moins (le droit « price.edit » permet de baisser un prix et d'accorder une remise).
 // Le caissier ne vend pas : il encaisse les ventes envoyées par les vendeurs, sans pouvoir les modifier.
+// Il gère aussi son tiroir : sorties d'argent (dépenses), ouverture et clôture de sa caisse.
 // « sales.create » (vendre directement à la caisse) est réservé au gérant et à l'administrateur.
 const SELLER = ['orders.send', 'customers.manage'];
-const CASHIER = ['pos', 'orders.cash'];
+const CASHIER = ['pos', 'orders.cash', 'expenses.add', 'cash.own'];
 const MANAGER = [
   ...CASHIER,
   'sales.create',
