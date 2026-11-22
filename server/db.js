@@ -318,6 +318,42 @@ const MIGRATIONS = [
   );
   CREATE INDEX idx_product_images_product ON product_images(product_id);
   `,
+
+  // v3 : rôle « vendeur » (prépare le panier et l'envoie à la caisse) et commandes à encaisser.
+  // La table users est refaite pour autoriser le nouveau rôle (contrainte CHECK).
+  `
+  CREATE TABLE users_new (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'seller')),
+    pin_hash TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    lang TEXT NOT NULL DEFAULT 'fr'
+  );
+  INSERT INTO users_new (id, name, role, pin_hash, active, created_at, lang)
+    SELECT id, name, role, pin_hash, active, created_at, lang FROM users;
+  DROP TABLE users;
+  ALTER TABLE users_new RENAME TO users;
+
+  ALTER TABLE sales ADD COLUMN seller_id INTEGER REFERENCES users(id);
+
+  CREATE TABLE orders (
+    id INTEGER PRIMARY KEY,
+    seller_id INTEGER NOT NULL REFERENCES users(id),
+    customer_id INTEGER REFERENCES customers(id),
+    mode TEXT NOT NULL DEFAULT 'retail',
+    items TEXT NOT NULL,
+    total REAL NOT NULL DEFAULT 0,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+    sale_id INTEGER REFERENCES sales(id),
+    created_at TEXT NOT NULL,
+    closed_at TEXT,
+    closed_by INTEGER REFERENCES users(id)
+  );
+  CREATE INDEX idx_orders_status ON orders(status, id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -339,17 +375,26 @@ function backupBeforeMigration(handle, fromVersion) {
 export function migrateDatabase(handle, { backup = false } = {}) {
   const current = handle.prepare('PRAGMA user_version').get().user_version;
   if (current > SCHEMA_VERSION) throw new Error('Base de données plus récente que ce logiciel : mettez le logiciel à jour.');
-  if (backup && current < SCHEMA_VERSION) backupBeforeMigration(handle, current);
-  for (let v = current; v < SCHEMA_VERSION; v++) {
-    handle.exec('BEGIN');
-    try {
-      handle.exec(MIGRATIONS[v]);
-      handle.exec(`PRAGMA user_version = ${v + 1}`);
-      handle.exec('COMMIT');
-    } catch (e) {
-      handle.exec('ROLLBACK');
-      throw e;
+  if (current === SCHEMA_VERSION) return;
+  if (backup) backupBeforeMigration(handle, current);
+  // Les clés étrangères doivent être coupées hors transaction pour pouvoir refaire une table.
+  handle.exec('PRAGMA foreign_keys = OFF');
+  try {
+    for (let v = current; v < SCHEMA_VERSION; v++) {
+      handle.exec('BEGIN');
+      try {
+        handle.exec(MIGRATIONS[v]);
+        handle.exec(`PRAGMA user_version = ${v + 1}`);
+        handle.exec('COMMIT');
+      } catch (e) {
+        handle.exec('ROLLBACK');
+        throw e;
+      }
     }
+    const broken = handle.prepare('PRAGMA foreign_key_check').all();
+    if (broken.length) console.warn(`  Attention : ${broken.length} lien(s) incohérent(s) dans la base après la mise à jour.`);
+  } finally {
+    handle.exec('PRAGMA foreign_keys = ON');
   }
 }
 migrateDatabase(db, { backup: true });

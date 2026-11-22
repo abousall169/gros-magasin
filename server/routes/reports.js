@@ -200,8 +200,9 @@ r.get('/reports/summary', requirePerm('reports.view'), (req, res) => {
     ...range,
   );
   const users = q.all(
+    // Une vente préparée par un vendeur lui est attribuée, même si un caissier l'a encaissée
     `SELECT u.id, u.name, COUNT(*) AS count, ROUND(SUM(s.total), 2) AS revenue, ROUND(SUM(s.total - s.paid), 2) AS credit
-       FROM sales s JOIN users u ON u.id = s.user_id WHERE ${completed} GROUP BY u.id ORDER BY revenue DESC`,
+       FROM sales s JOIN users u ON u.id = COALESCE(s.seller_id, s.user_id) WHERE ${completed} GROUP BY u.id ORDER BY revenue DESC`,
     ...range,
   );
   const cancelled = q.get(
@@ -366,6 +367,7 @@ r.get('/export/sales.csv', requirePerm('reports.view'), (req, res) => {
   const [from, to] = dayRange(req.query.from, req.query.to);
   const rows = q.all(
     `SELECT s.*, c.name AS customer_name, u.name AS user_name,
+            (SELECT sv.name FROM users sv WHERE sv.id = s.seller_id) AS seller_name,
             (SELECT COALESCE(SUM(rf.amount), 0) FROM refunds rf WHERE rf.sale_id = s.id) AS refunded,
             (SELECT GROUP_CONCAT(method || ' ' || REPLACE(REPLACE(printf('%.2f', amount), '.00', ''), '.', ',')
                                  || CASE WHEN reference IS NOT NULL THEN ' (' || reference || ')' ELSE '' END, ' + ')
@@ -379,7 +381,8 @@ r.get('/export/sales.csv', requirePerm('reports.view'), (req, res) => {
     ['numero', (s) => s.id],
     ['date', (s) => s.created_at],
     ['client', (s) => s.customer_name || ''],
-    ['vendeur', (s) => s.user_name],
+    ['vendeur', (s) => s.seller_name || s.user_name],
+    ['caisse', (s) => s.user_name],
     ['type', (s) => MODE[s.mode] || s.mode],
     ['sous_total', (s) => s.subtotal],
     ['remise', (s) => s.discount],

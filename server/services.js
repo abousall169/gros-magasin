@@ -172,14 +172,25 @@ function offlineDate(value) {
 
 /**
  * Enregistre une vente (transaction : contrôle des stocks, prix, paiements, crédit).
- * body = { client_id, offline, sold_at, customer_id, items: [{ product_id, sale_type, qty, unit_price? }],
+ * body = { client_id, offline, sold_at, customer_id, order_id, items: [{ product_id, sale_type, qty, unit_price? }],
  *          discount, payments: [{ method, amount, reference }], note }
+ * order_id : commande préparée par un vendeur ; elle passe à « encaissée » et le vendeur est noté sur la vente.
  *
  * Une vente faite hors ligne a déjà eu lieu au comptoir : elle n'est pas refusée pour une règle
  * de gestion (stock, prix, remise, crédit) mais marquée « à vérifier » pour le gérant.
  * Renvoie { id, duplicate, cash } (duplicate : vente déjà reçue, envoyée deux fois).
  */
-export function createSale(user, perms, body, { at } = {}) {
+export function createSale(user, perms, input, { at } = {}) {
+  let body = input || {};
+  // Caissier : il encaisse uniquement une vente envoyée par un vendeur, exactement telle qu'elle a été envoyée
+  // (articles, prix, client) ; il ne peut ni vendre lui-même ni modifier la vente.
+  const orderOnly = !perms.has('sales.create');
+  if (orderOnly) {
+    if (!body.order_id) bad("Vous ne pouvez qu'encaisser les ventes envoyées par les vendeurs.");
+    const sent = q.get('SELECT * FROM orders WHERE id = ?', int(body.order_id));
+    if (!sent) bad('Vente à encaisser introuvable.');
+    body = { ...body, items: JSON.parse(sent.items), customer_id: sent.customer_id, discount: 0, note: sent.note };
+  }
   const settings = getSettings();
   const rm = moneyRound();
   const offline = !!body?.offline;
@@ -212,6 +223,15 @@ export function createSale(user, perms, body, { at } = {}) {
       if (!customer) bad('Client introuvable.');
     }
 
+    // Commande préparée par un vendeur et encaissée ici
+    let order = null;
+    if (body.order_id) {
+      if (!perms.has('orders.cash')) bad("Vous n'êtes pas autorisé à encaisser les commandes des vendeurs.");
+      order = q.get('SELECT * FROM orders WHERE id = ?', int(body.order_id));
+      if (!order) bad('Commande introuvable.');
+      if (order.status !== 'pending') flag('order', `La commande n° ${order.id} a déjà été encaissée ou annulée.`);
+    }
+
     // --- Lignes ---
     const lines = [];
     const need = new Map();
@@ -229,7 +249,11 @@ export function createSale(user, perms, body, { at } = {}) {
         const up = rm(num(it.unit_price));
         if (!(up >= 0)) bad(`Prix invalide pour « ${p.name} ».`);
         if (Math.abs(up - listPrice) > 0.004) {
-          if (!perms.has('price.edit')) flag('price', "Vous n'êtes pas autorisé à modifier les prix.");
+          // Tout vendeur peut vendre plus cher que le prix fixé par le gérant ; seul le gérant peut vendre moins cher.
+          // Une vente envoyée par un vendeur a été contrôlée à l'envoi (le prix du gérant a pu changer depuis).
+          if (up < listPrice && !perms.has('price.edit') && !orderOnly) {
+            flag('price', `Le prix de « ${p.name} » ne peut pas être inférieur au prix fixé par le gérant (${fmtQty(listPrice)}).`);
+          }
           unitPrice = up;
         }
       }
@@ -244,7 +268,6 @@ export function createSale(user, perms, body, { at } = {}) {
         unitPrice,
         baseQty,
         total: rm(qty * unitPrice),
-        catalog: rm(qty * listPrice),
         unitCost: Number(p.cost_price) || 0,
         costTotal: round2(baseQty * (Number(p.cost_price) || 0)),
         taxRate: settings.tax_enabled ? Number(p.tax_rate ?? settings.tax_rate) || 0 : 0,
@@ -268,12 +291,6 @@ export function createSale(user, perms, body, { at } = {}) {
     if (!(discount >= 0) || discount > subtotal) bad('Remise invalide.');
     if (discount > 0 && !perms.has('price.edit')) flag('discount', "Vous n'êtes pas autorisé à accorder des remises.");
     const total = round2(subtotal - discount);
-
-    const catalog = sum(lines, (l) => l.catalog);
-    const maxDiscount = perms.has('discount.unlimited') ? 100 : Number(settings.cashier_max_discount);
-    if (maxDiscount < 100 && catalog > 0 && (catalog - total) * 100 > catalog * maxDiscount + 0.001) {
-      flag('discount', `Remise trop élevée : ${fmtQty(maxDiscount)} % au maximum pour un vendeur.`);
-    }
 
     // --- Paiements ---
     const pays = (Array.isArray(body.payments) ? body.payments : [])
@@ -318,8 +335,8 @@ export function createSale(user, perms, body, { at } = {}) {
 
     const sale = q.run(
       `INSERT INTO sales (user_id, customer_id, mode, subtotal, discount, total, paid, received, change_given, cost_total, note,
-                          created_at, client_id, offline, needs_review, synced_at, tax_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          created_at, client_id, offline, needs_review, synced_at, tax_total, seller_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       user.id,
       customer?.id ?? null,
       mode,
@@ -337,8 +354,18 @@ export function createSale(user, perms, body, { at } = {}) {
       review.size ? [...review].join(',') : null,
       offline ? nowLocal() : null,
       taxTotal,
+      order?.seller_id ?? null,
     );
     const saleId = sale.id;
+    if (order?.status === 'pending') {
+      q.run(
+        "UPDATE orders SET status = 'paid', sale_id = ?, closed_at = ?, closed_by = ? WHERE id = ?",
+        saleId,
+        nowLocal(),
+        user.id,
+        order.id,
+      );
+    }
 
     for (const l of lines) {
       const lots = consumeLots(l.p.id, l.baseQty);
@@ -378,10 +405,12 @@ export function createSale(user, perms, body, { at } = {}) {
 
 export function getSale(id, perms) {
   const sale = q.get(
-    `SELECT s.*, u.name AS user_name, c.name AS customer_name, c.phone AS customer_phone,
-            c.address AS customer_address, cu.name AS cancelled_by_name
+    `SELECT s.*, u.name AS user_name, sv.name AS seller_name, c.name AS customer_name, c.phone AS customer_phone,
+            c.address AS customer_address, cu.name AS cancelled_by_name,
+            (SELECT o.id FROM orders o WHERE o.sale_id = s.id) AS order_id
        FROM sales s
        JOIN users u ON u.id = s.user_id
+       LEFT JOIN users sv ON sv.id = s.seller_id
        LEFT JOIN customers c ON c.id = s.customer_id
        LEFT JOIN users cu ON cu.id = s.cancelled_by
       WHERE s.id = ?`,

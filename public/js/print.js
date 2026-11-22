@@ -80,6 +80,7 @@ export function printTicket(sale) {
     <div class="hr"></div>
     <div>${sale.id ? `${esc(t('Ticket'))} ${saleNo(sale.id)}` : esc(t('Vente hors ligne'))} — ${esc(t(MODE_LABEL[sale.mode] || ''))}</div>
     <div>${dateTimeFr(sale.created_at)} · ${esc(sale.user_name)}</div>
+    ${sale.seller_name ? `<div>${esc(t('Vendeur'))} : ${esc(sale.seller_name)}</div>` : ''}
     ${sale.customer_name ? `<div>${esc(t('Client'))} : <b>${esc(sale.customer_name)}</b></div>` : ''}
     <div class="hr"></div>
     <table>${rows}</table>

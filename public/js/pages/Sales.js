@@ -10,10 +10,11 @@ import { printTicket, printInvoice, saleText, openWhatsApp, openSms } from '../p
 
 const REVIEW = {
   stock: 'stock insuffisant',
-  price: 'prix modifié sans autorisation',
+  price: 'prix inférieur au prix fixé par le gérant',
   discount: 'remise non autorisée',
   credit: 'crédit non autorisé ou plafond dépassé',
   date: 'date de l’appareil incorrecte',
+  order: 'commande déjà encaissée ou annulée',
 };
 export const reviewText = (codes) =>
   String(codes || '')
@@ -158,7 +159,7 @@ export const SaleDetail = {
           <span class="badge paid" v-if="sale.status !== 'cancelled' && sale.credit <= 0">{{ t('Payée') }}</span>
           <span class="badge credit" v-if="sale.status !== 'cancelled' && sale.credit > 0">{{ t('Crédit') }} {{ money(sale.credit) }}</span>
           <span class="badge" v-if="sale.offline">{{ t('Faite hors ligne') }}</span>
-          <span class="muted small">{{ dateTimeFr(sale.created_at) }} · {{ t('vendu par {u}', { u: sale.user_name }) }}</span>
+          <span class="muted small">{{ dateTimeFr(sale.created_at) }} · {{ sale.seller_name ? t('vendu par {s}, encaissé par {u}', { s: sale.seller_name, u: sale.user_name }) : t('vendu par {u}', { u: sale.user_name }) }}<template v-if="sale.order_id"> · {{ t('Commande n° {n}', { n: sale.order_id }) }}</template></span>
         </div>
         <div v-if="sale.needs_review" class="alert danger"><Icon name="alert" />
           <div class="grow">{{ t('Vente faite hors ligne à vérifier : {r}.', { r: reviewText(sale.needs_review) }) }}</div>
@@ -324,7 +325,7 @@ export default {
         <button v-for="s in rows" :key="s.id" type="button" class="list-row" @click="open(s.id)">
           <div class="main-col">
             <div class="title">{{ s.customer_name || t('Client comptoir') }}</div>
-            <div class="sub">{{ saleNo(s.id) }} · {{ when(s.created_at) }} · {{ s.user_name }} · {{ t('{n} article(s)', { n: s.lines }) }}<template v-if="s.methods"> · {{ s.methods }}</template></div>
+            <div class="sub">{{ saleNo(s.id) }} · {{ when(s.created_at) }} · {{ s.seller_name ? s.seller_name + ' → ' + s.user_name : s.user_name }} · {{ t('{n} article(s)', { n: s.lines }) }}<template v-if="s.methods"> · {{ s.methods }}</template></div>
           </div>
           <div class="end">
             <div class="num strong" :style="s.status === 'cancelled' ? 'text-decoration:line-through;color:var(--ink-3)' : ''">{{ money(s.total) }}</div>

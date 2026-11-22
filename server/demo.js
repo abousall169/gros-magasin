@@ -60,7 +60,7 @@ export function seedDemo(admin) {
   const rand = rng(20261109);
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
   const between = (a, b) => a + Math.floor(rand() * (b - a + 1));
-  const perms = new Set(['pos', 'price.edit', 'credit.sell', 'cost.view']);
+  const perms = new Set(['pos', 'sales.create', 'price.edit', 'credit.sell', 'cost.view']);
   const today = todayLocal();
   const start = addDays(today, -14);
 

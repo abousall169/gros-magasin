@@ -15,14 +15,12 @@ export const DEFAULT_SETTINGS = {
   receipt_width: '80',
   receipt_show_balance: true,
   allow_negative_stock: false,
-  cashier_can_edit_price: false,
   cashier_can_sell_on_credit: true,
   payment_methods: ['Mobile Money', 'Carte bancaire', 'Virement / Chèque'],
   phone_country_code: '',
   demo_data: false,
   tax_enabled: false,
   tax_rate: 18,
-  cashier_max_discount: 100,
   printer: '',
   auto_print: false,
   printer_cut: true,
@@ -54,7 +52,6 @@ const VALIDATORS = {
   receipt_width: (v) => (String(v) === '58' ? '58' : '80'),
   receipt_show_balance: bool,
   allow_negative_stock: bool,
-  cashier_can_edit_price: bool,
   cashier_can_sell_on_credit: bool,
   payment_methods: (v) => {
     if (!Array.isArray(v)) bad('Liste des moyens de paiement invalide.');
@@ -72,7 +69,6 @@ const VALIDATORS = {
   demo_data: bool,
   tax_enabled: bool,
   tax_rate: percent('Taux de TVA'),
-  cashier_max_discount: percent('Remise maximale'),
   // usb:<nom de l'imprimante Windows> ou tcp:<adresse IP>[:port]
   printer: (v) => {
     const p = str(v, 200) || '';
@@ -129,12 +125,26 @@ export function paymentMethods() {
 export const ROLES = {
   admin: 'Administrateur',
   manager: 'Gestionnaire',
-  cashier: 'Vendeur / Caissier',
+  cashier: 'Caissier',
+  seller: 'Vendeur',
 };
 
-const BASE = ['pos', 'customers.manage', 'payments.receive', 'expenses.add', 'cash.own'];
+// Vendeur et caissier ne voient que la caisse.
+// Le vendeur prépare le panier et l'envoie à la caisse ; il peut vendre plus cher que le prix fixé par le gérant,
+// jamais moins (le droit « price.edit » permet de baisser un prix et d'accorder une remise).
+// Le caissier ne vend pas : il encaisse les ventes envoyées par les vendeurs, sans pouvoir les modifier.
+// « sales.create » (vendre directement à la caisse) est réservé au gérant et à l'administrateur.
+const SELLER = ['orders.send', 'customers.manage'];
+const CASHIER = ['pos', 'orders.cash'];
 const MANAGER = [
-  ...BASE,
+  ...CASHIER,
+  'sales.create',
+  'customers.manage',
+  'orders.send',
+  'menu.full',
+  'payments.receive',
+  'expenses.add',
+  'cash.own',
   'dashboard',
   'sales.all',
   'sales.cancel',
@@ -147,7 +157,6 @@ const MANAGER = [
   'cash.all',
   'price.edit',
   'credit.sell',
-  'discount.unlimited',
 ];
 const ADMIN = [...MANAGER, 'settings.manage', 'users.manage', 'backup', 'payments.delete'];
 
@@ -156,9 +165,8 @@ export function permsFor(user) {
   if (!user) return new Set();
   if (user.role === 'admin') return new Set(ADMIN);
   if (user.role === 'manager') return new Set(MANAGER);
-  const s = getSettings();
-  const p = new Set(BASE);
-  if (s.cashier_can_edit_price) p.add('price.edit');
-  if (s.cashier_can_sell_on_credit) p.add('credit.sell');
+  if (user.role === 'seller') return new Set(SELLER);
+  const p = new Set(CASHIER);
+  if (getSettings().cashier_can_sell_on_credit) p.add('credit.sell');
   return p;
 }

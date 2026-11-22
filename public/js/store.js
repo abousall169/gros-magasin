@@ -227,7 +227,7 @@ export function connectEvents() {
     if (wasOffline || store.offlineBoot) {
       wasOffline = false;
       if (store.offlineBoot) loadMe().catch(() => {});
-      emit(['products', 'sales', 'customers', 'expenses', 'purchases', 'cash']);
+      emit(['products', 'sales', 'customers', 'expenses', 'purchases', 'cash', 'orders']);
       syncQueue();
     }
   });

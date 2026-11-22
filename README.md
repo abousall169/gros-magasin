@@ -9,7 +9,8 @@ Il fonctionne **en local** : un ordinateur du magasin sert de serveur, et les em
 - **Caisse** : recherche par nom ou code-barres (douchette USB/Bluetooth acceptée), **scan avec la caméra**
   du téléphone, **reconnaissance d'un produit par photo**, bascule **Détail / Gros**
   (la caisse change de couleur : jaune safran = détail, indigo = gros), quantités décimales (kg, litres),
-  remises et prix négociés (si autorisé, avec une remise maximale pour les vendeurs), paniers en attente, facture proforma.
+  prix négociés (un vendeur peut vendre plus cher que le prix fixé par le gérant, jamais moins cher ; seul le gérant
+  peut baisser un prix ou faire une remise), paniers en attente, facture proforma.
 - **Encaissement** : espèces avec calcul de la monnaie, Mobile Money (Orange Money, Wave…) avec le **n° de transaction**,
   carte, virement, paiements mélangés, **vente à crédit** sur le compte du client (avec plafond de crédit).
 - **Hors ligne** : si le Wi-Fi ou l'ordinateur serveur tombe, les téléphones continuent à vendre. Les ventes sont gardées
@@ -36,8 +37,11 @@ Il fonctionne **en local** : un ordinateur du magasin sert de serveur, et les em
 - **Rapports** : chiffre d'affaires, retours, **TVA collectée** (prix TTC), bénéfice brut et net, part gros / détail,
   produits les plus vendus, ventes par vendeur et par rayon, dettes clients et fournisseurs.
 - **Plusieurs employés en même temps** : le stock se met à jour en direct sur tous les appareils.
-- **Rôles** : Administrateur (tout), Gestionnaire (produits, stock, rapports), Vendeur (caisse ;
-  ne voit pas les prix d'achat ni les bénéfices).
+- **Rôles** : Administrateur (tout), Gestionnaire (produits, stock, rapports), **Vendeur** (prépare le panier et
+  l'envoie à la caisse, n'encaisse pas) et **Caissier** (ne vend pas : il voit la liste des ventes envoyées par
+  tous les vendeurs, en temps réel, en choisit une et l'encaisse **sans pouvoir la modifier**).
+  Vendeur et caissier ne voient que la caisse et ne voient pas les prix d'achat ni les bénéfices ; le vendeur
+  peut vendre plus cher que le prix fixé mais jamais moins cher, et le prix annoncé au client est figé à l'envoi.
 - **Langues** : français, **arabe** (de droite à gauche) et anglais, au choix de chaque employé ; les tickets
   sortent dans sa langue.
 - **Sauvegardes automatiques** au démarrage puis toutes les 6 heures, copie vers une clé USB ou un dossier
@@ -102,13 +106,21 @@ pour que l'adresse ne change pas d'un jour à l'autre.
 
 - **Vente au détail** : touchez les produits, ajustez les quantités, touchez **Encaisser**, saisissez le montant reçu :
   la monnaie à rendre s'affiche en grand.
+- **Vendeur et caissier** : le vendeur prépare le panier du client puis touche **Envoyer à la caisse** : un numéro
+  de commande s'affiche, le client le donne au caissier. Plusieurs vendeurs peuvent envoyer en même temps.
+  Le caissier a un écran à part, **« Ventes à encaisser »** : la liste se remplit toute seule (avec une notification),
+  chaque vente montre son numéro, le total, le vendeur, le client et les articles. Il touche une vente, saisit le
+  paiement et valide : il ne peut ni modifier les articles, les prix ou le client, ni vendre lui-même.
+  Le stock ne baisse qu'à l'encaissement. Tant qu'elle n'est pas encaissée, le vendeur peut **reprendre** sa commande
+  (le client ajoute un article) ou l'annuler. La vente garde les deux noms : les rapports « par vendeur » comptent
+  le vendeur, la clôture de caisse compte le caissier.
 - **Vente en gros** : touchez **Gros** (la caisse passe en indigo) : les prix et les quantités sont par colis.
   Chaque ligne peut aussi être basculée seule entre « Détail » et « Gros ».
 - **Vente à crédit** : choisissez le client, encaissez seulement une partie (ou « Tout à crédit ») :
   le reste est ajouté à sa dette.
 - **Versement d'un client** : Clients › le client › **Encaisser un versement** (reçu imprimable).
 - **Arrivée de marchandises** : Stock › **Nouvelle réception** (le stock et le prix d'achat sont mis à jour).
-- **Fin de journée** : Rapports › **Clôture de caisse** (les vendeurs : « Ma caisse du jour »),
+- **Fin de journée** (gérant) : Rapports › **Caisse : ouverture et clôture**,
   comptez les espèces : le logiciel indique s'il manque de l'argent.
 - **Annuler une vente** (gérant) : Ventes › la vente › **Annuler la vente** : les produits reviennent en stock.
 

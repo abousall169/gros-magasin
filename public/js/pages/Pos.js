@@ -2,7 +2,7 @@
 // vente hors ligne (gardée sur l'appareil puis envoyée au retour du réseau).
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from '../vue.js';
 import { api, enqueueSale, readQueue, requestQueuedPrint, sessionToken } from '../api.js';
-import { store, can, toast, toastError, ask, local, CASH, onSynced } from '../store.js';
+import { store, can, toast, toastError, ask, local, CASH, onSynced, onChange } from '../store.js';
 import { t, pname, payLabel } from '../i18n.js';
 import {
   money,
@@ -22,6 +22,7 @@ import {
   stockText,
   stockLevel,
   saleNo,
+  timeFr,
   MODE_LABEL,
 } from '../format.js';
 import { Icon, Sheet, Empty } from '../components/ui.js';
@@ -49,6 +50,7 @@ const CartView = {
           <button v-if="c.held.length" type="button" class="band-btn" @click="c.showHeld = true"><Icon name="clock" size="sm" />{{ t('{n} en attente', { n: c.held.length }) }}</button>
           <button v-if="closable" type="button" class="icon-btn" @click="$emit('close')" :aria-label="t('Fermer le panier')"><Icon name="x" /></button>
         </div>
+        <div v-if="c.cart.order" class="order-tag"><Icon name="receipt" size="sm" />{{ t('Commande n° {n} · vendeur {s}', { n: c.cart.order.id, s: c.cart.order.seller_name }) }}</div>
         <div class="mode-switch" role="group" :aria-label="t('Mode de vente')">
           <button type="button" class="retail" :class="{ on: c.mode === 'retail' }" @click="c.setMode('retail')">{{ t('Détail') }}</button>
           <button type="button" class="wholesale" :class="{ on: c.mode === 'wholesale' }" @click="c.setMode('wholesale')">{{ t('Gros') }}</button>
@@ -97,21 +99,21 @@ const CartView = {
       </div>
 
       <div class="cart-foot">
-        <div class="sum-row" v-if="c.cart.discount > 0 || c.canEditPrice">
+        <div class="sum-row" v-if="c.cart.discount > 0 || c.canDiscount">
           <span>{{ t('Sous-total') }}</span><span>{{ c.money(c.subtotal) }}</span>
         </div>
-        <div class="sum-row" v-if="c.canEditPrice">
+        <div class="sum-row" v-if="c.canDiscount">
           <label for="discount">{{ t('Remise') }}</label>
           <input id="discount" class="input discount-input num" inputmode="decimal" :value="c.cart.discount || ''" placeholder="0" @change="c.setDiscount($event.target.value, $event)" />
         </div>
-        <div class="sum-row warn-row" v-if="c.overDiscount">{{ t('Remise trop élevée : {n} % au maximum.', { n: c.maxDiscount }) }}</div>
         <div class="sum-row total"><span>{{ t('Total') }}</span><span class="amount">{{ c.money(c.total) }}</span></div>
         <div class="sum-row small muted" v-if="c.taxTotal > 0"><span>{{ t('dont TVA') }}</span><span>{{ c.money(c.taxTotal) }}</span></div>
         <div class="cart-actions">
           <button type="button" class="btn icon-only" :disabled="!c.lines.length" @click="c.hold()" :title="t('Mettre en attente')" :aria-label="t('Mettre en attente')"><Icon name="pause" /></button>
           <button type="button" class="btn" :disabled="!c.lines.length" @click="c.proforma()" :title="t('Facture proforma')" :aria-label="t('Facture proforma')"><Icon name="file" /></button>
           <button type="button" class="btn" :disabled="!c.lines.length" @click="c.clear()" :title="t('Vider le panier')" :aria-label="t('Vider le panier')"><Icon name="trash" /></button>
-          <button type="button" class="btn mode lg" :disabled="!c.lines.length || c.overDiscount" @click="c.openPay()">{{ t('Encaisser') }}</button>
+          <button v-if="c.canCash" type="button" class="btn mode lg" :disabled="!c.lines.length" @click="c.openPay()">{{ t('Encaisser') }}</button>
+          <button v-else type="button" class="btn mode lg" :class="{ loading: c.sending }" :disabled="!c.lines.length || c.sending" @click="c.sendOrder()"><Icon name="swap" />{{ t('Envoyer à la caisse') }}</button>
         </div>
       </div>
     </div>`,
@@ -128,6 +130,7 @@ export default {
       customer: saved?.customer || null,
       discount: Number(saved?.discount) || 0,
       note: saved?.note || '',
+      order: saved?.order || null, // commande d'un vendeur chargée à la caisse : { id, seller_name }
     });
     const held = ref(local.get('held', []));
     const search = ref('');
@@ -141,15 +144,23 @@ export default {
     const flashId = ref(0);
     const pay = ref(null);
     const done = ref(null);
+    const sent = ref(null); // commande envoyée à la caisse (vendeur)
+    const sending = ref(false);
+    const orders = ref([]); // commandes en attente : toutes (caisse) ou les siennes (vendeur)
+    const showOrders = ref(false);
     const searchEl = ref(null);
 
     watch(cart, () => local.set('cart', cart), { deep: true });
     watch(mode, (m) => local.set('mode', m));
 
     const allowNegative = computed(() => !!store.settings.allow_negative_stock);
-    const canEditPrice = computed(() => can('price.edit'));
+    // Vendeurs et caissiers peuvent changer un prix, mais seul le gérant peut descendre sous le prix fixé ou faire une remise
+    const canEditPrice = computed(() => can('pos') || can('orders.send'));
+    const canDiscount = computed(() => can('price.edit'));
+    // Le caissier (et le gérant) encaisse ; le vendeur envoie le panier à la caisse
+    const canCash = computed(() => can('pos'));
+    const canSeeOrders = computed(() => can('orders.cash') || can('orders.send'));
     const byId = computed(() => new Map(store.products.map((p) => [p.id, p])));
-    const maxDiscount = computed(() => (can('discount.unlimited') ? 100 : Number(store.settings.cashier_max_discount ?? 100)));
 
     // ---- Catalogue filtré ----
     const filtered = computed(() => {
@@ -183,7 +194,7 @@ export default {
       cart.items.map((it) => {
         const p = byId.value.get(it.product_id);
         if (!p) {
-          return { ...it, name: t('Produit indisponible'), unit: '', price: 0, total: 0, catalog: 0, canToggle: false, warn: t('Ce produit a été retiré de la vente : supprimez la ligne.') };
+          return { ...it, name: t('Produit indisponible'), unit: '', price: 0, total: 0, canToggle: false, warn: t('Ce produit a été retiré de la vente : supprimez la ligne.') };
         }
         const price = it.unit_price ?? listPrice(p, it.sale_type);
         let warn = '';
@@ -199,7 +210,6 @@ export default {
           price,
           custom: it.unit_price !== null && it.unit_price !== undefined,
           total: roundMoney(Number(it.qty) * price),
-          catalog: roundMoney(Number(it.qty) * listPrice(p, it.sale_type)),
           canToggle: sellsWholesale(p),
           warn,
         };
@@ -208,10 +218,6 @@ export default {
     const subtotal = computed(() => roundMoney(lines.value.reduce((s, l) => s + l.total, 0)));
     const total = computed(() => roundMoney(Math.max(0, subtotal.value - (Number(cart.discount) || 0))));
     const itemCount = computed(() => cart.items.length);
-    const catalogTotal = computed(() => lines.value.reduce((s, l) => s + l.catalog, 0));
-    const overDiscount = computed(
-      () => maxDiscount.value < 100 && catalogTotal.value > 0 && (catalogTotal.value - total.value) * 100 > catalogTotal.value * maxDiscount.value + 0.001,
-    );
     // TVA comprise dans les prix (affichage ; le serveur fait le calcul officiel)
     const taxTotal = computed(() => {
       const s = store.settings;
@@ -315,6 +321,10 @@ export default {
       if (!(n >= 0)) return;
       const p = byId.value.get(it.product_id);
       const list = p ? listPrice(p, it.sale_type) : n;
+      if (n < list - 0.004 && !canDiscount.value) {
+        toast(t('Le prix ne peut pas être inférieur au prix fixé par le gérant ({p}).', { p: money(list) }), 'error', 4500);
+        return;
+      }
       it.unit_price = Math.abs(n - list) < 0.005 ? null : n;
     };
     const setDiscount = (value, ev) => {
@@ -352,13 +362,14 @@ export default {
       cart.customer = null;
       cart.discount = 0;
       cart.note = '';
+      cart.order = null;
     };
     const clear = async () => {
       if (await ask({ title: t('Vider le panier ?'), message: t('Tous les articles seront retirés.'), confirm: t('Vider'), danger: true })) resetCart();
     };
     const hold = () => {
       if (!cart.items.length) return;
-      held.value.unshift({ id: Date.now(), at: new Date().toISOString(), mode: mode.value, client_id: cart.client_id, items: JSON.parse(JSON.stringify(cart.items)), customer: cart.customer, discount: cart.discount, note: cart.note });
+      held.value.unshift({ id: Date.now(), at: new Date().toISOString(), mode: mode.value, client_id: cart.client_id, items: JSON.parse(JSON.stringify(cart.items)), customer: cart.customer, discount: cart.discount, note: cart.note, order: cart.order });
       local.set('held', held.value);
       resetCart();
       showCart.value = false;
@@ -371,6 +382,7 @@ export default {
       cart.customer = h.customer;
       cart.discount = h.discount || 0;
       cart.note = h.note || '';
+      cart.order = h.order || null;
       mode.value = h.mode === 'wholesale' ? 'wholesale' : 'retail';
       held.value = held.value.filter((x) => x.id !== h.id);
       local.set('held', held.value);
@@ -379,6 +391,106 @@ export default {
     const dropHeld = (h) => {
       held.value = held.value.filter((x) => x.id !== h.id);
       local.set('held', held.value);
+    };
+
+    // ---- Commandes : le vendeur envoie le panier à la caisse, le caissier l'encaisse ----
+    const loadOrders = async (notify = false) => {
+      if (!canSeeOrders.value) return;
+      try {
+        const list = await api.get('/orders');
+        if (notify && canCash.value) {
+          const known = new Set(orders.value.map((o) => o.id));
+          const fresh = list.filter((o) => !known.has(o.id));
+          if (fresh.length) {
+            navigator.vibrate?.([80, 60, 80]);
+            toast(
+              fresh.length > 1 ? t('{n} nouvelles commandes à encaisser.', { n: fresh.length }) : t('Nouvelle commande de {s} à encaisser.', { s: fresh[0].seller_name }),
+              'info',
+              6000,
+            );
+          }
+        }
+        orders.value = list;
+      } catch {
+        /* hors ligne : la liste revient avec le réseau */
+      }
+    };
+    const cartFromOrder = (o) => {
+      if (cart.items.length) hold();
+      cart.client_id = newId();
+      cart.items = o.items.map((it, i) => {
+        // Prix figé à l'envoi : on le garde seulement s'il diffère du prix actuel du gérant
+        const p = byId.value.get(it.product_id);
+        const same = p && it.unit_price != null && Math.abs(it.unit_price - listPrice(p, it.sale_type)) < 0.005;
+        return { key: `${o.id}-${i}`, product_id: it.product_id, sale_type: it.sale_type, qty: it.qty, unit_price: same ? null : it.unit_price };
+      });
+      cart.customer = o.customer_id
+        ? { id: o.customer_id, name: o.customer_name, phone: o.customer_phone, type: o.customer_type, balance: o.customer_balance || 0, credit_limit: o.customer_credit_limit || 0 }
+        : null;
+      cart.discount = 0;
+      cart.note = o.note || '';
+      cart.order = null;
+      mode.value = o.mode === 'wholesale' ? 'wholesale' : 'retail';
+    };
+    const sendOrder = async () => {
+      if (!cart.items.length || sending.value) return;
+      const bad = lines.value.find((l) => l.warn);
+      if (bad) return toast(`${bad.name} : ${bad.warn}`, 'error');
+      sending.value = true;
+      try {
+        const o = await api.post('/orders', {
+          customer_id: cart.customer?.id || null,
+          items: cart.items.map((it) => ({ product_id: it.product_id, sale_type: it.sale_type, qty: it.qty, unit_price: it.unit_price ?? null })),
+          note: cart.note,
+        });
+        resetCart();
+        showCart.value = false;
+        sent.value = o;
+        loadOrders();
+      } catch (e) {
+        toast(e.status === 0 ? t('Pas de réseau : la commande n’a pas pu être envoyée à la caisse. Réessayez quand la connexion revient.') : e.message, 'error', 6000);
+      } finally {
+        sending.value = false;
+      }
+    };
+    const cashOrder = (o) => {
+      cartFromOrder(o);
+      cart.order = { id: o.id, seller_name: o.seller_name };
+      showOrders.value = false;
+      nextTick(() => openPay());
+    };
+    const takeBack = async (o) => {
+      try {
+        await api.post(`/orders/${o.id}/cancel`);
+        cartFromOrder(o);
+        showOrders.value = false;
+        loadOrders();
+        toast(t('Commande reprise : modifiez-la puis renvoyez-la.'));
+      } catch (e) {
+        toastError(e);
+      }
+    };
+    const cancelOrder = async (o) => {
+      const yes = await ask({
+        title: t('Annuler la commande n° {n} ?', { n: o.id }),
+        message: t('Elle disparaît de la liste à encaisser. Rien n’est vendu ni retiré du stock.'),
+        confirm: t('Annuler la commande'),
+        danger: true,
+      });
+      if (!yes) return;
+      try {
+        await api.post(`/orders/${o.id}/cancel`);
+        if (cart.order?.id === o.id) cart.order = null;
+        loadOrders();
+      } catch (e) {
+        toastError(e);
+      }
+    };
+    const closeSent = () => {
+      sent.value = null;
+      nextTick(() => {
+        if (window.matchMedia('(pointer: fine)').matches) searchEl.value?.focus();
+      });
     };
 
     const draftSale = () => ({
@@ -400,7 +512,6 @@ export default {
       if (!cart.items.length) return;
       const bad = lines.value.find((l) => l.warn);
       if (bad) return toast(`${bad.name} : ${bad.warn}`, 'error');
-      if (overDiscount.value) return toast(t('Remise trop élevée : {n} % au maximum.', { n: maxDiscount.value }), 'error');
       pay.value = { lines: [{ method: CASH, amount: String(total.value), reference: '' }], busy: false, error: '' };
       showCart.value = false;
     };
@@ -487,6 +598,7 @@ export default {
       const payload = {
         client_id: cart.client_id,
         customer_id: cart.customer?.id || null,
+        order_id: cart.order?.id || null,
         items: cart.items.map((it) => {
           const prod = byId.value.get(it.product_id);
           // Prix fixé au moment de la vente : une vente faite hors ligne garde le prix affiché
@@ -508,6 +620,7 @@ export default {
         resetCart();
         pay.value = null;
         done.value = sale;
+        if (payload.order_id) loadOrders();
         if (store.settings.auto_print && store.settings.printer) printTicket(sale);
       } catch (e) {
         if (e.status === 0) {
@@ -553,20 +666,25 @@ export default {
       }
       if (e.key === 'F4') {
         e.preventDefault();
-        openPay();
+        if (canCash.value) openPay();
+        else sendOrder();
         return;
       }
       if (!typing && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && window.matchMedia('(pointer: fine)').matches) {
         searchEl.value?.focus();
       }
     };
+    let offOrders = null;
     onMounted(() => {
       document.addEventListener('keydown', onKey);
       if (window.matchMedia('(pointer: fine)').matches) searchEl.value?.focus();
+      loadOrders();
+      offOrders = onChange('orders', () => loadOrders(true));
     });
     onUnmounted(() => {
       document.removeEventListener('keydown', onKey);
       offSynced();
+      offOrders?.();
     });
 
     const ctx = reactive({
@@ -577,8 +695,10 @@ export default {
       subtotal,
       total,
       taxTotal,
-      overDiscount,
-      maxDiscount,
+      canDiscount,
+      canCash,
+      sending,
+      sendOrder,
       held,
       showHeld,
       picking,
@@ -623,6 +743,15 @@ export default {
       payNums,
       quickCash,
       done,
+      sent,
+      orders,
+      showOrders,
+      canCash,
+      cashOrder,
+      takeBack,
+      cancelOrder,
+      closeSent,
+      timeFr,
       searchEl,
       itemCount,
       total,
@@ -678,6 +807,11 @@ export default {
               <button type="button" class="wholesale" :class="{ on: mode === 'wholesale' }" @click="setMode('wholesale')">{{ t('Gros') }}</button>
             </div>
           </div>
+          <button v-if="orders.length" type="button" class="orders-bar" @click="showOrders = true">
+            <Icon name="receipt" />
+            <span class="grow">{{ canCash ? t('{n} commande(s) de vendeurs à encaisser', { n: orders.length }) : t('{n} commande(s) envoyée(s), en attente à la caisse', { n: orders.length }) }}</span>
+            <strong>{{ t('Voir') }}</strong>
+          </button>
           <div class="chips" v-if="categories.length">
             <button type="button" class="chip" :class="{ on: !category }" @click="category = 0">{{ t('Tous') }}</button>
             <button v-for="c in categories" :key="c.id" type="button" class="chip" :class="{ on: category === c.id }" @click="category = category === c.id ? 0 : c.id">{{ c.name }}</button>
@@ -792,12 +926,42 @@ export default {
       </template>
     </Sheet>
 
+    <!-- Commandes en attente : à encaisser (caisse) ou envoyées (vendeur) -->
+    <Sheet v-if="showOrders" :title="canCash ? t('Commandes à encaisser') : t('Mes commandes envoyées')" @close="showOrders = false">
+      <div v-if="orders.length" class="list">
+        <div v-for="o in orders" :key="o.id" class="list-row">
+          <div class="main-col">
+            <div class="title">{{ t('Commande n° {n}', { n: o.id }) }} · {{ money(o.total) }}</div>
+            <div class="sub">{{ o.customer_name || t('Client comptoir') }} · {{ t('{n} article(s)', { n: o.items.length }) }}<template v-if="canCash"> · {{ t('vendeur {s}', { s: o.seller_name }) }}</template> · {{ timeFr(o.created_at) }}</div>
+          </div>
+          <button type="button" class="icon-btn sm" @click="cancelOrder(o)" :aria-label="t('Annuler la commande')" :title="t('Annuler la commande')"><Icon name="trash" size="sm" /></button>
+          <button v-if="canCash" type="button" class="btn sm primary" @click="cashOrder(o)">{{ t('Encaisser') }}</button>
+          <button v-else type="button" class="btn sm" @click="takeBack(o)">{{ t('Reprendre') }}</button>
+        </div>
+      </div>
+      <p v-else class="small muted">{{ t('Aucune commande en attente.') }}</p>
+    </Sheet>
+
+    <!-- Commande envoyée à la caisse (vendeur) -->
+    <Sheet v-if="sent" :title="t('Commande envoyée')" size="narrow" @close="closeSent">
+      <div class="done">
+        <div class="tick"><Icon name="check" /></div>
+        <h2>{{ t('Envoyée à la caisse') }}</h2>
+        <div class="change-due"><small>{{ t('Numéro de commande') }}</small><strong>{{ sent.id }}</strong></div>
+        <p class="muted small">{{ money(sent.total) }}{{ sent.customer_name ? ' · ' + sent.customer_name : '' }}</p>
+        <p class="small">{{ t('Le client va payer à la caisse en donnant ce numéro.') }}</p>
+      </div>
+      <template #foot>
+        <button type="button" class="btn primary lg block" @click="closeSent" autofocus>{{ t('Nouvelle vente') }}</button>
+      </template>
+    </Sheet>
+
     <!-- Vente terminée -->
     <Sheet v-if="done" :title="done.id ? t('Vente') + ' ' + saleNo(done.id) : t('Vente hors ligne')" size="narrow" @close="newSale">
       <div class="done">
         <div class="tick" :class="{ offline: done.offline }"><Icon :name="done.offline ? 'clock' : 'check'" /></div>
         <h2>{{ done.offline ? t('Vente gardée sur l’appareil') : t('Vente enregistrée') }}</h2>
-        <p class="muted small">{{ t(MODE_LABEL[done.mode]) }} · {{ money(done.total) }}{{ done.customer_name ? ' · ' + done.customer_name : '' }}</p>
+        <p class="muted small">{{ t(MODE_LABEL[done.mode]) }} · {{ money(done.total) }}{{ done.customer_name ? ' · ' + done.customer_name : '' }}{{ done.seller_name ? ' · ' + t('vendeur {s}', { s: done.seller_name }) : '' }}</p>
         <div v-if="done.offline" class="alert" style="text-align:start"><Icon name="wifi" /><span>{{ t('Pas de réseau : la vente partira toute seule au retour de la connexion, avec sa vraie date. Elle n’est jamais perdue.') }}</span></div>
         <div class="change-due" v-if="done.change_given > 0"><small>{{ t('Monnaie à rendre') }}</small><strong>{{ money(done.change_given) }}</strong></div>
         <div class="alert danger" v-if="done.credit > 0 && !done.offline"><Icon name="clock" /><span>{{ t('{a} mis à crédit. Nouveau solde de {c} :', { a: money(done.credit), c: done.customer_name }) }} <b>{{ money(done.customer_balance) }}</b></span></div>

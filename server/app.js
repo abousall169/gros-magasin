@@ -18,6 +18,7 @@ import partnersRoutes from './routes/partners.js';
 import operationsRoutes from './routes/operations.js';
 import reportsRoutes from './routes/reports.js';
 import cashRoutes from './routes/cash.js';
+import ordersRoutes from './routes/orders.js';
 import systemRoutes, { lanAddresses } from './routes/system.js';
 
 const PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -46,6 +47,7 @@ api.use(partnersRoutes);
 api.use(operationsRoutes);
 api.use(reportsRoutes);
 api.use(cashRoutes);
+api.use(ordersRoutes);
 api.use(systemRoutes);
 app.use('/api', api);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Adresse inconnue.' }));

@@ -6,7 +6,7 @@ import { initials } from '../format.js';
 import { t, LANGS, setLang } from '../i18n.js';
 import { Icon } from '../components/ui.js';
 
-const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Vendeur' };
+const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Caissier', seller: 'Vendeur' };
 
 const Setup = {
   components: { Icon },

@@ -3159,3 +3159,135 @@ label.btn {
     flex: 1;
   }
 }
+/* Vendeur / caissier : une seule page (la caisse), pas de barre d'onglets en bas du téléphone */
+.shell.solo {
+  --tabbar-h: 0px;
+}
+.shell.solo .tabbar {
+  display: none;
+}
+
+/* Commandes des vendeurs : bandeau en caisse et rappel dans la bande du panier */
+.orders-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--s4);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--rail);
+  color: var(--rail-ink);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  text-align: start;
+}
+.orders-bar:hover {
+  background: var(--rail-2);
+}
+.orders-bar strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cart-band .order-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--mode-on-muted);
+}
+
+/* ---------- Caisse du caissier : ventes envoyées par les vendeurs ---------- */
+.page-head .count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2em;
+  height: 2em;
+  margin-inline-start: var(--s2);
+  padding: 0 var(--s2);
+  border-radius: 999px;
+  background: var(--credit);
+  color: #fff;
+  font-size: var(--t-sm);
+  vertical-align: middle;
+}
+.order-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--s4);
+}
+.order-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-inline-start: 6px solid var(--mode);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  color: var(--ink);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  transition: box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.order-card:hover {
+  box-shadow: 0 6px 18px rgba(20, 24, 50, 0.12);
+}
+.order-card:active {
+  transform: scale(0.99);
+}
+.order-card:focus-visible {
+  outline: 3px solid var(--mode);
+  outline-offset: 2px;
+}
+.order-card .oc-top {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.order-card .oc-no {
+  font-size: var(--t-lg);
+  font-weight: 800;
+}
+.order-card .oc-time {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
+.order-card .oc-total {
+  font-size: var(--t-2xl);
+  line-height: 1.1;
+}
+.order-card .oc-who {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+.order-card .oc-items {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.order-card .oc-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  min-height: 44px;
+  margin-top: var(--s1);
+  border-radius: var(--r-sm);
+  background: var(--mode);
+  color: var(--mode-on);
+  font-weight: 700;
+}
+@media (max-width: 720px) {
+  .order-grid {
+    grid-template-columns: 1fr;
+    gap: var(--s3);
+  }
+}

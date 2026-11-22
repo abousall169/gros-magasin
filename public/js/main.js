@@ -8,6 +8,7 @@ import { t, LANGS, setLang, applyLang, initLang } from './i18n.js';
 import { Icon, Sheet, Toasts, DialogHost } from './components/ui.js';
 import Login from './pages/Login.js';
 import Pos from './pages/Pos.js';
+import CashDesk from './pages/CashDesk.js';
 import Dashboard from './pages/Dashboard.js';
 import Sales from './pages/Sales.js';
 import Products from './pages/Products.js';
@@ -17,19 +18,26 @@ import Expenses from './pages/Expenses.js';
 import Reports from './pages/Reports.js';
 import Settings from './pages/Settings.js';
 
-const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Vendeur' };
+const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Caissier', seller: 'Vendeur' };
 
-// Pages et droits nécessaires
+// Caisse : le caissier (qui encaisse sans vendre) voit seulement la liste des ventes envoyées par les vendeurs ;
+// le vendeur, le gérant et l'administrateur ont la caisse complète.
+const Till = {
+  components: { Pos, CashDesk },
+  setup: () => ({ desk: computed(() => !can('sales.create') && !can('orders.send')) }),
+  template: `<CashDesk v-if="desk" /><Pos v-else />`,
+};
+
+// Pages et droits nécessaires. Le vendeur / caissier ne voit que la caisse (sans le droit « menu.full »).
 const PAGES = [
   { path: '/tableau-de-bord', label: 'Tableau de bord', short: 'Accueil', icon: 'home', perm: 'dashboard', comp: Dashboard },
-  { path: '/caisse', label: 'Caisse', short: 'Caisse', icon: 'cart', perm: 'pos', comp: Pos, bare: true },
+  { path: '/caisse', label: 'Caisse', short: 'Caisse', icon: 'cart', perm: ['pos', 'orders.send'], comp: Till, bare: true },
   { path: '/ventes', label: 'Ventes', short: 'Ventes', icon: 'receipt', perm: 'pos', comp: Sales },
   { path: '/produits', label: 'Produits', short: 'Produits', icon: 'box', perm: null, comp: Products },
   { path: '/stock', label: 'Stock & réceptions', short: 'Stock', icon: 'truck', perm: 'stock.manage', comp: Stock },
   { path: '/clients', label: 'Clients & crédits', short: 'Clients', icon: 'users', perm: 'customers.manage', comp: Customers },
   { path: '/depenses', label: 'Dépenses', short: 'Dépenses', icon: 'wallet', perm: 'expenses.add', comp: Expenses },
   { path: '/rapports', label: 'Rapports', short: 'Rapports', icon: 'chart', perm: 'reports.view', comp: Reports },
-  { path: '/caisse-du-jour', label: 'Ma caisse du jour', short: 'Ma caisse', icon: 'calculator', perm: 'cash.own', hideIf: 'reports.view', comp: Reports },
   { path: '/parametres', label: 'Paramètres', short: 'Réglages', icon: 'sliders', perm: null, comp: Settings },
 ];
 
@@ -74,7 +82,7 @@ const App = {
   components: { Icon, Sheet, Toasts, DialogHost, Login, RejectedSales },
   setup() {
     const menuOpen = ref(false);
-    const pages = computed(() => PAGES.filter((p) => (!p.perm || can(p.perm)) && !(p.hideIf && can(p.hideIf))));
+    const pages = computed(() => PAGES.filter((p) => (!p.perm || [].concat(p.perm).some(can)) && (p.path === '/caisse' || can('menu.full'))));
     const current = computed(() => pages.value.find((p) => route.path === p.path || route.path.startsWith(`${p.path}/`)));
     const homePath = computed(() => (can('dashboard') ? '/tableau-de-bord' : '/caisse'));
     const tabs = computed(() => {
@@ -144,7 +152,7 @@ const App = {
   template: `
     <div v-if="!store.booted" class="boot">{{ t('Chargement…') }}</div>
     <Login v-else-if="!store.me" @logged="onLogged" />
-    <div v-else class="shell">
+    <div v-else class="shell" :class="{ solo: pages.length === 1 }">
       <aside class="rail" :aria-label="t('Menu principal')">
         <div class="rail-brand"><img class="rail-logo" src="/icons/icon.svg" :alt="store.settings.store_name" /><strong>{{ store.settings.store_name }}</strong><span v-if="store.settings.demo_data" class="demo-tag">{{ t('Données de démonstration') }}</span><span v-else>{{ t('Caisse gros & détail') }}</span></div>
         <nav class="nav">

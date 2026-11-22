@@ -66,6 +66,7 @@ r.get('/sales', requirePerm('pos'), (req, res) => {
   const rows = q.all(
     `SELECT s.id, s.created_at, s.total, s.paid, s.discount, s.status, s.mode, s.customer_id, s.needs_review, s.offline,
             c.name AS customer_name, u.name AS user_name, ${REFUNDED_SQL} AS refunded_total,
+            (SELECT sv.name FROM users sv WHERE sv.id = s.seller_id) AS seller_name,
             (SELECT COUNT(*) FROM sale_items i WHERE i.sale_id = s.id) AS lines,
             (SELECT GROUP_CONCAT(method, ', ') FROM sale_payments p WHERE p.sale_id = s.id) AS methods
        FROM sales s
@@ -100,7 +101,7 @@ r.post('/sales', requirePerm('pos'), (req, res) => {
   const body = req.body || {};
   const result = createSale(req.user, req.perms, body);
   if (!result.duplicate) {
-    broadcast('products', 'sales', 'customers');
+    broadcast('products', 'sales', 'customers', ...(body.order_id ? ['orders'] : []));
     if (result.cash && !body.offline) pulseDrawer();
   }
   res.json({ ...getSale(result.id, req.perms), duplicate: result.duplicate });

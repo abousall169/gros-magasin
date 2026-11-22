@@ -133,6 +133,7 @@ r.post('/system/reset', requirePerm('backup'), (req, res) => {
   const backup = makeBackup('avant-remise-a-zero');
   tx(() => {
     for (const table of [
+      'orders',
       'refund_items',
       'refunds',
       'sale_payments',

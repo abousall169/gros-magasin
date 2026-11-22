@@ -11,7 +11,8 @@ import { Icon, Sheet, Skeleton } from '../components/ui.js';
 const ROLE_HELP = {
   admin: 'Accès complet : prix, bénéfices, réglages, employés.',
   manager: 'Gère produits, stock, clients et rapports. Ne touche pas aux réglages ni aux employés.',
-  cashier: 'Encaisse les ventes, voit ses propres ventes et les clients. Ne voit pas les prix d’achat.',
+  cashier: 'Ne voit que la liste des ventes envoyées par les vendeurs. Il en choisit une et l’encaisse, sans pouvoir la modifier. Il ne vend pas lui-même.',
+  seller: 'Ne voit que la caisse. Prépare le panier du client et l’envoie à la caisse : il n’encaisse pas. Peut vendre plus cher que le prix fixé, jamais moins cher.',
 };
 
 const StoreSettings = {
@@ -65,11 +66,9 @@ const StoreSettings = {
       <section class="panel">
         <div class="panel-head"><h2>Règles de vente</h2></div>
         <div class="stack">
-          <label class="check"><input type="checkbox" v-model="f.cashier_can_edit_price" /><span>Les vendeurs peuvent modifier les prix et faire des remises<small>Pour négocier au comptoir. Les gestionnaires et l'administrateur le peuvent toujours.</small></span></label>
-          <label class="check"><input type="checkbox" v-model="f.cashier_can_sell_on_credit" /><span>Les vendeurs peuvent vendre à crédit<small>Le plafond de crédit de chaque client reste appliqué.</small></span></label>
-          <label class="check"><input type="checkbox" v-model="f.allow_negative_stock" /><span>Autoriser la vente quand le stock est à zéro<small>Utile si tous les produits n’ont pas encore été comptés. Le stock deviendra négatif.</small></span></label>
-          <div class="field" style="max-width:360px"><label for="st-maxd">Remise maximale accordée par un vendeur (%)</label><input id="st-maxd" class="input num" v-model.number="f.cashier_max_discount" inputmode="decimal" /><span class="hint">Écart total entre le prix catalogue et le prix encaissé (remises et prix négociés). 100 = sans limite. Les gestionnaires ne sont pas limités.</span></div>
-        </div>
+          <p class="small muted">Vendeurs et caissiers ne voient que la caisse. Plusieurs <b>vendeurs</b> préparent chacun le panier de leur client et l'envoient à la caisse ; ils peuvent changer le prix d'un article pour vendre <b>plus cher</b> que le prix fixé ici, jamais moins cher, et ne peuvent pas faire de remise. Le <b>caissier</b> voit la liste des ventes envoyées, en choisit une et l'encaisse <b>sans pouvoir la modifier</b> ; il ne vend pas lui-même. Les gestionnaires et l'administrateur peuvent vendre directement, baisser un prix et accorder des remises.</p>
+          <label class="check"><input type="checkbox" v-model="f.cashier_can_sell_on_credit" /><span>Les caissiers peuvent encaisser à crédit<small>Le plafond de crédit de chaque client reste appliqué.</small></span></label>
+          <label class="check"><input type="checkbox" v-model="f.allow_negative_stock" /><span>Autoriser la vente quand le stock est à zéro<small>Utile si tous les produits n’ont pas encore été comptés. Le stock deviendra négatif.</small></span></label>        </div>
       </section>
       <section class="panel">
         <div class="panel-head"><h2>TVA</h2></div>
@@ -470,7 +469,7 @@ const Account = {
         busy.value = false;
       }
     };
-    const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Vendeur' };
+    const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Caissier', seller: 'Vendeur' };
     return { f, busy, save, store, LANGS, setLang, ROLE };
   },
   template: `

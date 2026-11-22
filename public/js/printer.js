@@ -146,6 +146,7 @@ export function sendSaleTicket(sale) {
   tk.gap(4);
   tk.center(`${sale.id ? `${t('Ticket')} ${saleNo(sale.id)}` : t('Vente hors ligne')} — ${t(MODE_LABEL[sale.mode] || '')}`, 22);
   tk.center(`${dateTimeFr(sale.created_at)} · ${sale.user_name || ''}`, 22);
+  if (sale.seller_name) tk.center(`${t('Vendeur')} : ${sale.seller_name}`, 22);
   if (sale.customer_name) tk.center(`${t('Client')} : ${sale.customer_name}`, 22, true);
   if (sale.status === 'cancelled') tk.center(`*** ${t('VENTE ANNULÉE')} ***`, 28, true);
   tk.rule();
