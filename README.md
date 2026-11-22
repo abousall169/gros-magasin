@@ -116,6 +116,11 @@ pour que l'adresse ne change pas d'un jour à l'autre.
   le vendeur, la clôture de caisse compte le caissier.
 - **Vente en gros** : touchez **Gros** (la caisse passe en indigo) : les prix et les quantités sont par colis.
   Chaque ligne peut aussi être basculée seule entre « Détail » et « Gros ».
+- **Gros et détail dans la même vente** : le choix Gros / Détail ne change que les **prochains** articles, jamais
+  ceux déjà dans le panier. Exemple : en **Gros**, touchez « Boisson » deux fois (2 cartons au prix de gros), passez
+  en **Détail** et touchez-la cinq fois (5 bouteilles au prix de détail) : le panier garde les deux lignes et le
+  stock baisse de 2 cartons + 5 bouteilles. Sur la fiche du produit, une pastille indigo compte les colis et une
+  pastille orange les unités.
 - **Vente à crédit** : choisissez le client, encaissez seulement une partie (ou « Tout à crédit ») :
   le reste est ajouté à sa dette.
 - **Versement d'un client** : Clients › le client › **Encaisser un versement** (reçu imprimable).

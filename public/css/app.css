@@ -1493,20 +1493,34 @@ body.locked {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  gap: 4px;
+}
+/* Une pastille par type : gros (indigo) et détail (ambre), comme les lignes de prix */
+.tile .t-qty b {
   min-width: 26px;
   height: 26px;
   padding: 0 7px;
   border-radius: 13px;
-  background: var(--mode);
-  color: var(--mode-on);
   font-size: var(--t-xs);
   font-weight: 800;
   display: grid;
   place-items: center;
   font-variant-numeric: tabular-nums;
 }
+.tile .t-qty b.retail {
+  background: var(--detail);
+  color: var(--ink);
+}
+.tile .t-qty b.wholesale {
+  background: var(--gros);
+  color: #fff;
+}
 .tile .t-name.has-qty {
   padding-right: 30px;
+}
+.tile .t-name.has-both {
+  padding-right: 62px;
 }
 
 /* Panier */
@@ -2764,7 +2778,8 @@ body.locked {
     grid-area: auto;
     justify-self: start;
   }
-  .tile .t-name.has-qty {
+  .tile .t-name.has-qty,
+  .tile .t-name.has-both {
     padding-right: 0;
   }
   .tile:hover {

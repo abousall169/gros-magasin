@@ -64,7 +64,7 @@ export default {
     const preview = (o) =>
       linesOf(o)
         .slice(0, 3)
-        .map((l) => `${l.name} × ${fmtQty(l.qty)}`)
+        .map((l) => `${l.name} × ${fmtQty(l.qty)} ${plural(l.unit, l.qty)}`.trim())
         .join(', ') + (o.items.length > 3 ? '…' : '');
 
     // ---- Encaissement ----

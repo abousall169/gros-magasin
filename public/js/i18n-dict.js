@@ -189,8 +189,6 @@ export const AR = {
   'Aucun produit pour « {q} ».': 'لا يوجد منتج لـ «{q}».',
   'Aucun produit avec le code {c}.': 'لا يوجد منتج بالرمز {c}.',
   'Remise invalide.': 'تخفيض غير صالح.',
-  'Tout le panier passe au prix de gros.': 'تحوّلت السلة كلها إلى سعر الجملة.',
-  'Tout le panier passe au prix de détail.': 'تحوّلت السلة كلها إلى سعر التجزئة.',
   'Vider le panier ?': 'تفريغ السلة؟',
   'Tous les articles seront retirés.': 'ستُزال جميع المنتجات.',
   'Vider': 'تفريغ',
@@ -463,6 +461,8 @@ export const AR = {
   'Valider l’encaissement': 'تأكيد التحصيل',
   'Vente encaissée': 'تم تحصيل البيع',
   'Vente suivante': 'البيع التالي',
+  'Les prochains articles seront ajoutés en gros. Le panier ne change pas.': 'ستُضاف المنتجات التالية بالجملة. السلة لا تتغيّر.',
+  'Les prochains articles seront ajoutés au détail. Le panier ne change pas.': 'ستُضاف المنتجات التالية بالتجزئة. السلة لا تتغيّر.',
 };
 
 export const EN = {
@@ -653,8 +653,6 @@ export const EN = {
   'Aucun produit pour « {q} ».': 'No product for “{q}”.',
   'Aucun produit avec le code {c}.': 'No product with code {c}.',
   'Remise invalide.': 'Invalid discount.',
-  'Tout le panier passe au prix de gros.': 'The whole cart switches to wholesale prices.',
-  'Tout le panier passe au prix de détail.': 'The whole cart switches to retail prices.',
   'Vider le panier ?': 'Clear the cart?',
   'Tous les articles seront retirés.': 'All items will be removed.',
   'Vider': 'Clear',
@@ -927,4 +925,6 @@ export const EN = {
   'Valider l’encaissement': 'Confirm payment',
   'Vente encaissée': 'Sale checked out',
   'Vente suivante': 'Next sale',
+  'Les prochains articles seront ajoutés en gros. Le panier ne change pas.': 'Next items will be added at the wholesale price. The cart does not change.',
+  'Les prochains articles seront ajoutés au détail. Le panier ne change pas.': 'Next items will be added at the retail price. The cart does not change.',
 };

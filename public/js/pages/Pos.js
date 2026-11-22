@@ -185,11 +185,17 @@ export default {
       }
       return round3(n);
     };
+    // Quantités dans le panier par produit, séparées gros / détail (2 cartons et 5 bouteilles ne font pas « 7 »)
     const inCart = computed(() => {
       const m = new Map();
-      for (const it of cart.items) m.set(it.product_id, round3((m.get(it.product_id) || 0) + Number(it.qty)));
+      for (const it of cart.items) {
+        const q = m.get(it.product_id) || { retail: 0, wholesale: 0 };
+        q[it.sale_type] = round3(q[it.sale_type] + Number(it.qty));
+        m.set(it.product_id, q);
+      }
       return m;
     });
+    const mixed = computed(() => new Set(cart.items.map((it) => it.sale_type)).size > 1);
     const lines = computed(() =>
       cart.items.map((it) => {
         const p = byId.value.get(it.product_id);
@@ -337,15 +343,14 @@ export default {
       cart.discount = roundMoney(n);
     };
 
+    // Le mode ne change que les prochains articles : un même panier peut mélanger gros et détail
+    // (ex. 2 cartons de boisson au prix de gros + 5 bouteilles au prix de détail).
+    // Chaque ligne garde son type ; le bouton Gros / Détail de la ligne la bascule seule.
     const setMode = (m) => {
       if (m === mode.value) return;
       mode.value = m;
       if (cart.items.length) {
-        for (const it of cart.items) {
-          it.sale_type = m;
-          it.unit_price = null;
-        }
-        toast(m === 'wholesale' ? t('Tout le panier passe au prix de gros.') : t('Tout le panier passe au prix de détail.'));
+        toast(m === 'wholesale' ? t('Les prochains articles seront ajoutés en gros. Le panier ne change pas.') : t('Les prochains articles seront ajoutés au détail. Le panier ne change pas.'));
       }
     };
 
@@ -690,7 +695,7 @@ export default {
     const ctx = reactive({
       cart,
       mode,
-      modeName: computed(() => MODE_NAME[mode.value]),
+      modeName: computed(() => (mixed.value ? 'Gros + détail' : MODE_NAME[mode.value])),
       lines,
       subtotal,
       total,
@@ -821,8 +826,11 @@ export default {
         <div class="pos-grid">
           <button v-for="p in visible" :key="p.id" type="button" class="tile" :class="{ flash: flashId === p.id }"
                   :disabled="!allowNegative && p.stock <= 0" @click="add(p)">
-            <span class="t-name" :class="{ 'has-qty': inCart.get(p.id) }">{{ pname(p) }}</span>
-            <span class="t-qty" v-if="inCart.get(p.id)">{{ fmtQty(inCart.get(p.id)) }}</span>
+            <span class="t-name" :class="{ 'has-qty': inCart.get(p.id), 'has-both': inCart.get(p.id)?.retail && inCart.get(p.id)?.wholesale }">{{ pname(p) }}</span>
+            <span class="t-qty" v-if="inCart.get(p.id)">
+              <b v-if="inCart.get(p.id).wholesale" class="wholesale" :title="t('Gros')">{{ fmtQty(inCart.get(p.id).wholesale) }}</b>
+              <b v-if="inCart.get(p.id).retail" class="retail" :title="t('Détail')">{{ fmtQty(inCart.get(p.id).retail) }}</b>
+            </span>
             <span class="t-prices">
               <span class="price-line retail" :class="{ active: mode === 'retail' }"><i class="k"></i><b>{{ money(p.retail_price, { bare: true }) }}</b>/ {{ p.unit }}</span>
               <span v-if="sellsWholesale(p)" class="price-line wholesale" :class="{ active: mode === 'wholesale' }"><i class="k"></i><b>{{ money(listPrice(p, 'wholesale'), { bare: true }) }}</b>/ {{ hasPack(p) ? p.pack_unit : p.unit }}</span>
