@@ -4,7 +4,7 @@
 import { api } from './api.js';
 import { store, CASH } from './store.js';
 import { t, pname, payLabel } from './i18n.js';
-import { money, qty, plural, dateTimeFr, timeFr, saleNo, MODE_LABEL } from './format.js';
+import { money, qty, plural, dateTimeFr, timeFr, saleNo, MODE_LABEL, listPrice, unitLabel } from './format.js';
 import { bars, encode, humanReadable } from './barcode.js';
 
 const FONT = '"Noto Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif';
@@ -151,7 +151,8 @@ export function sendSaleTicket(sale) {
   if (sale.status === 'cancelled') tk.center(`*** ${t('VENTE ANNULÉE')} ***`, 28, true);
   tk.rule();
   for (const it of sale.items || []) {
-    tk.start(`${itemName(it)}${it.sale_type === 'wholesale' ? ` (${t('gros')})` : ''}`, 24, true);
+    const tag = it.sale_type === 'wholesale' ? t('gros') : it.sale_type === 'semi' ? t('demi-gros') : '';
+    tk.start(`${itemName(it)}${tag ? ` (${tag})` : ''}`, 24, true);
     tk.row(`${qty(it.qty)} ${plural(it.unit_label, it.qty)} × ${money(it.unit_price, { bare: true })}`, money(it.total, { bare: true }), 24);
     if (it.returned_qty > 0) tk.row(`  ${t('Retourné')} : ${qty(it.returned_qty)}`, '', 20);
     tk.gap(4);
@@ -209,23 +210,33 @@ export function sendSessionReport(session) {
   const tk = new Ticket();
   tk.header();
   tk.rule();
-  tk.center(t('CLÔTURE DE CAISSE'), 26, true);
+  const dayEnd = !!session.user_id && !(Number(b.opening_float) > 0);
+  tk.center(dayEnd ? t('FIN DE JOURNÉE') : t('CLÔTURE DE CAISSE'), 26, true);
   tk.center(session.user_name ? `${t('Caisse de')} ${session.user_name}` : t('Tout le magasin'), 22);
   tk.center(`${dateTimeFr(session.opened_at)} → ${dateTimeFr(session.closed_at)}`, 20);
   tk.rule();
-  tk.row(t('Fond de caisse'), money(b.opening_float, { bare: true }));
+  if (b.till_total != null) {
+    tk.row(`${t('Ventes')} (${b.count})`, money(b.sales_total, { bare: true }));
+    tk.row(`− ${t('Dépenses')}`, money(b.expenses_total, { bare: true }));
+    tk.row(t('TOTAL CAISSE'), money(b.till_total), 28, true);
+    tk.rule();
+  }
+  if (b.opening_float > 0) tk.row(t('Fond de caisse'), money(b.opening_float, { bare: true }));
   tk.row(`+ ${t('Ventes en espèces')}`, money(b.sales, { bare: true }));
-  tk.row(`+ ${t('Versements des clients')}`, money(b.payments, { bare: true }));
+  if (b.payments) tk.row(`+ ${t('Versements des clients')}`, money(b.payments, { bare: true }));
   if (b.refunds) tk.row(`− ${t('Retours remboursés')}`, money(b.refunds, { bare: true }));
   tk.row(`− ${t('Dépenses')}`, money(b.expenses, { bare: true }));
   if (b.suppliers) tk.row(`− ${t('Paiements fournisseurs')}`, money(b.suppliers, { bare: true }));
   tk.rule();
   tk.row(t('Espèces attendues'), money(session.expected), 24, true);
-  tk.row(t('Espèces comptées'), money(session.counted), 24, true);
-  tk.row(t('Écart'), money(session.difference, { sign: true }), 26, true);
+  if (session.counted === null) tk.row(t('Espèces comptées'), t('non comptées'), 22);
+  else {
+    tk.row(t('Espèces comptées'), money(session.counted), 24, true);
+    tk.row(t('Écart'), money(session.difference, { sign: true }), 26, true);
+  }
   if (b.count != null) {
     tk.rule();
-    tk.row(`${t('Ventes encaissées')} (${b.count})`, money(b.sales_total, { bare: true }));
+    if (b.till_total == null) tk.row(`${t('Ventes encaissées')} (${b.count})`, money(b.sales_total, { bare: true }));
     if (b.credit > 0) tk.row(t('dont à crédit'), money(b.credit, { bare: true }));
   }
   if (b.methods?.length) {
@@ -256,8 +267,8 @@ export function sendLabel(product, { showPrice = true, priceType = 'retail' } = 
   tk.center(pname(product), 32, true);
   if (store.lang !== 'ar' && product.name_ar) tk.center(product.name_ar, 28);
   if (showPrice) {
-    const price = priceType === 'wholesale' ? product.wholesale_price : product.retail_price;
-    const unit = priceType === 'wholesale' && product.pack_unit ? product.pack_unit : product.unit;
+    const price = listPrice(product, priceType);
+    const unit = unitLabel(product, priceType);
     tk.center(`${money(price)} / ${unit}`, 40, true);
   }
   tk.gap(8);

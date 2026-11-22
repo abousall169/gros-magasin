@@ -85,6 +85,17 @@ function productInput(b) {
   if (packUnit) {
     if (!(packSize > 1)) bad(`Indiquez combien de « ${unit} » contient un(e) « ${packUnit} » (au moins 2).`);
   } else packSize = 1;
+  // Demi-gros (facultatif) : un prix, et éventuellement une unité intermédiaire plus petite que le colis
+  const semiUnit = str(b.semi_unit, 20);
+  let semiSize = round3(num(b.semi_size, 1));
+  const semi = round2(num(b.semi_price, 0));
+  if (semiUnit) {
+    if (!(semiSize > 1)) bad(`Indiquez combien de « ${unit} » contient un(e) « ${semiUnit} » (demi-gros, au moins 2).`);
+    if (packUnit && semiSize >= packSize) {
+      bad(`Le demi-gros (« ${semiUnit} » de ${semiSize}) doit contenir moins que le gros (« ${packUnit} » de ${packSize}).`);
+    }
+    if (!(semi > 0)) bad(`Indiquez le prix demi-gros d'un(e) « ${semiUnit} ».`);
+  } else semiSize = 1;
   const retail = round2(num(b.retail_price, 0));
   const wholesale = round2(num(b.wholesale_price, 0));
   const cost = round4(num(b.cost_price, 0));
@@ -92,6 +103,7 @@ function productInput(b) {
   for (const [v, label] of [
     [retail, 'Prix de détail'],
     [wholesale, 'Prix de gros'],
+    [semi, 'Prix demi-gros'],
     [cost, "Prix d'achat"],
     [minStock, "Seuil d'alerte"],
   ]) {
@@ -119,6 +131,9 @@ function productInput(b) {
     pack_unit: packUnit,
     pack_size: packSize,
     wholesale_price: wholesale,
+    semi_unit: semiUnit,
+    semi_size: semiSize,
+    semi_price: semi,
     cost_price: cost,
     min_stock: minStock,
     active: b.active === undefined ? 1 : bool(b.active) ? 1 : 0,
@@ -134,9 +149,9 @@ function checkBarcode(barcode, id = 0) {
 function insertProduct(d, user, initialStock = 0) {
   const now = nowLocal();
   const p = q.run(
-    `INSERT INTO products (name, name_ar, barcode, category_id, unit, retail_price, pack_unit, pack_size, wholesale_price, cost_price,
-                           min_stock, active, tax_rate, expiry_date, stock, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+    `INSERT INTO products (name, name_ar, barcode, category_id, unit, retail_price, pack_unit, pack_size, wholesale_price,
+                           semi_unit, semi_size, semi_price, cost_price, min_stock, active, tax_rate, expiry_date, stock, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     d.name,
     d.name_ar,
     d.barcode,
@@ -146,6 +161,9 @@ function insertProduct(d, user, initialStock = 0) {
     d.pack_unit,
     d.pack_size,
     d.wholesale_price,
+    d.semi_unit,
+    d.semi_size,
+    d.semi_price,
     d.cost_price,
     d.min_stock,
     d.active,
@@ -177,7 +195,8 @@ function applyExpiry(id, date) {
 function updateProduct(id, d) {
   q.run(
     `UPDATE products SET name = ?, name_ar = ?, barcode = ?, category_id = ?, unit = ?, retail_price = ?, pack_unit = ?, pack_size = ?,
-            wholesale_price = ?, cost_price = ?, min_stock = ?, active = ?, tax_rate = ?, expiry_date = ?, updated_at = ?
+            wholesale_price = ?, semi_unit = ?, semi_size = ?, semi_price = ?, cost_price = ?, min_stock = ?, active = ?, tax_rate = ?,
+            expiry_date = ?, updated_at = ?
       WHERE id = ?`,
     d.name,
     d.name_ar,
@@ -188,6 +207,9 @@ function updateProduct(id, d) {
     d.pack_unit,
     d.pack_size,
     d.wholesale_price,
+    d.semi_unit,
+    d.semi_size,
+    d.semi_price,
     d.cost_price,
     d.min_stock,
     d.active,
@@ -359,6 +381,9 @@ const CSV_COLUMNS = [
   ['unite_gros', (p) => p.pack_unit],
   ['contenance', (p) => (p.pack_unit ? p.pack_size : '')],
   ['prix_gros', (p) => p.wholesale_price],
+  ['unite_demi_gros', (p) => p.semi_unit],
+  ['contenance_demi_gros', (p) => (p.semi_unit ? p.semi_size : '')],
+  ['prix_demi_gros', (p) => p.semi_price || ''],
   ['prix_achat', (p) => p.cost_price],
   ['stock', (p) => p.stock],
   ['seuil_alerte', (p) => p.min_stock],
@@ -374,7 +399,7 @@ r.get('/export/products.csv', requirePerm('products.manage'), (req, res) => {
 
 r.get('/export/products-template.csv', requirePerm('products.manage'), (req, res) => {
   const sample = [
-    { name: 'Huile végétale 1 L', barcode: '', category_name: 'Alimentation', unit: 'bouteille', retail_price: 1300, pack_unit: 'carton', pack_size: 12, wholesale_price: 14400, cost_price: 1100, stock: 120, min_stock: 24 },
+    { name: 'Huile végétale 1 L', barcode: '', category_name: 'Alimentation', unit: 'bouteille', retail_price: 1300, pack_unit: 'carton', pack_size: 12, wholesale_price: 14400, semi_unit: 'pack', semi_size: 6, semi_price: 7500, cost_price: 1100, stock: 120, min_stock: 24 },
     { name: 'Ciment 50 kg', barcode: '', category_name: 'Quincaillerie', unit: 'sac', retail_price: 4800, pack_unit: '', pack_size: 1, wholesale_price: 4500, cost_price: 4200, stock: 40, min_stock: 10 },
   ];
   sendCSV(res, 'modele-produits.csv', toCSV(sample, CSV_COLUMNS));
@@ -389,6 +414,9 @@ const ALIASES = {
   unite_gros: ['unite_gros', 'unite_de_gros', 'colis', 'conditionnement'],
   contenance: ['contenance', 'quantite_par_colis', 'qte_par_colis', 'nb_par_colis', 'pack_size'],
   prix_gros: ['prix_gros', 'prix_de_gros'],
+  unite_demi_gros: ['unite_demi_gros', 'unite_de_demi_gros'],
+  contenance_demi_gros: ['contenance_demi_gros', 'quantite_demi_gros', 'qte_demi_gros'],
+  prix_demi_gros: ['prix_demi_gros', 'prix_de_demi_gros', 'prix_semi_gros'],
   prix_achat: ['prix_achat', 'prix_d_achat', 'cout', 'pa'],
   stock: ['stock', 'quantite', 'qte', 'stock_initial'],
   seuil_alerte: ['seuil_alerte', 'seuil', 'alerte', 'stock_min', 'stock_minimum'],
@@ -433,13 +461,16 @@ r.post('/products/import', requirePerm('products.manage'), (req, res) => {
           pack_unit: get('unite_gros'),
           pack_size: get('contenance'),
           wholesale_price: get('prix_gros'),
+          semi_unit: get('unite_demi_gros'),
+          semi_size: get('contenance_demi_gros'),
+          semi_price: get('prix_demi_gros'),
           cost_price: get('prix_achat'),
           min_stock: get('seuil_alerte'),
           name_ar: get('nom_arabe'),
           tax_rate: get('tva'),
           expiry_date: get('peremption') === undefined ? undefined : csvDay(get('peremption')),
         };
-        for (const k of ['retail_price', 'pack_size', 'wholesale_price', 'cost_price', 'min_stock', 'tax_rate']) {
+        for (const k of ['retail_price', 'pack_size', 'wholesale_price', 'semi_size', 'semi_price', 'cost_price', 'min_stock', 'tax_rate']) {
           if (body[k] !== undefined && String(body[k]).trim() !== '' && !Number.isFinite(num(body[k]))) {
             bad(`valeur numérique invalide « ${body[k]} »`);
           }
@@ -466,6 +497,9 @@ r.post('/products/import', requirePerm('products.manage'), (req, res) => {
             pack_unit: existing.pack_unit,
             pack_size: existing.pack_size,
             wholesale_price: existing.wholesale_price,
+            semi_unit: existing.semi_unit,
+            semi_size: existing.semi_size,
+            semi_price: existing.semi_price,
             cost_price: existing.cost_price,
             min_stock: existing.min_stock,
             name_ar: existing.name_ar,

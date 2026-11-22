@@ -112,17 +112,26 @@ pour que l'adresse ne change pas d'un jour à l'autre.
   chaque vente occupe une ligne sur toute la largeur (numéro, vendeur, client, articles, total) et se touche
   n'importe où. Il saisit le paiement et valide : il ne peut ni modifier les articles, les prix ou le client,
   ni vendre lui-même.
-- **Caisse du caissier** : sur le même écran, **Ouvrir ma caisse** le matin avec le fond de caisse ;
-  **Sortie d'argent** pour noter l'argent pris dans le tiroir (transport, repas…, avec le motif) ;
-  **Fermer ma caisse** le soir : le logiciel montre les espèces attendues (fond + ventes en espèces − sorties),
-  les encaissements Mobile Money / carte à vérifier à part et la liste des sorties d'argent ; le caissier saisit
-  les espèces comptées, voit l'écart, ferme et **le ticket de clôture s'imprime** (avec le détail des sorties).
-  Une sortie saisie par erreur peut être supprimée tant que la caisse est ouverte ; après, seul le gérant peut.
   Le stock ne baisse qu'à l'encaissement. Tant qu'elle n'est pas encaissée, le vendeur peut **reprendre** sa commande
   (le client ajoute un article) ou l'annuler. La vente garde les deux noms : les rapports « par vendeur » comptent
-  le vendeur, la clôture de caisse compte le caissier.
+  le vendeur, la fin de journée compte le caissier.
+- **Journée du caissier** : rien à ouvrir le matin. Dans le menu de gauche, sous le nom du magasin, le
+  **Total caisse** = total des ventes encaissées − dépenses, depuis la dernière fin de journée (il se met à jour
+  à chaque encaissement et à chaque dépense ; sur téléphone, il est dans un bandeau sous la barre du haut).
+  Les dépenses se notent dans **Dépenses › Nouvelle dépense** (montant, motif, détail). En bas du menu, juste
+  au-dessus de « Connecté au serveur », **Terminer la journée** montre le récapitulatif (total caisse, ventes par
+  moyen de paiement, liste des dépenses ; les espèces comptées sont facultatives), imprime le ticket de fin de
+  journée et **remet les totaux à zéro** : la journée suivante commence aussitôt. Une dépense saisie par erreur
+  peut être supprimée pendant la journée, ensuite seul le gérant peut. Le gérant retrouve chaque fin de journée
+  dans Rapports › Caisse.
 - **Vente en gros** : touchez **Gros** (la caisse passe en indigo) : les prix et les quantités sont par colis.
   Chaque ligne peut aussi être basculée seule entre « Détail » et « Gros ».
+- **Demi-gros** : sur la fiche d'un produit, cochez « Ce produit se vend aussi en demi-gros » et indiquez le prix :
+  soit par **paquet** (pack de 6, demi-carton… avec sa contenance, plus petite que le colis de gros), soit par
+  unité (prix intermédiaire, ex. la bouteille à 375 au lieu de 400). La caisse affiche alors trois choix
+  **Détail / Demi-gros / Gros** (le demi-gros est bleu-vert) ; un produit sans prix demi-gros ajouté en mode
+  demi-gros part au détail, avec un message. Le bouton de chaque ligne passe de détail à demi-gros puis à gros.
+  Le stock baisse de la contenance du paquet ; rapports, tickets, factures et export Excel distinguent le demi-gros.
 - **Gros et détail dans la même vente** : le choix Gros / Détail ne change que les **prochains** articles, jamais
   ceux déjà dans le panier. Exemple : en **Gros**, touchez « Boisson » deux fois (2 cartons au prix de gros), passez
   en **Détail** et touchez-la cinq fois (5 bouteilles au prix de détail) : le panier garde les deux lignes et le

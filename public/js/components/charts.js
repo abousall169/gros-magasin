@@ -111,11 +111,11 @@ export const BarChart = {
     </div>`,
 };
 
-/** Barre fine répartie en deux : détail / gros. */
+/** Barre fine répartie : détail / demi-gros / gros. */
 export const SplitBar = {
-  props: { retail: { type: Number, default: 0 }, wholesale: { type: Number, default: 0 } },
+  props: { retail: { type: Number, default: 0 }, semi: { type: Number, default: 0 }, wholesale: { type: Number, default: 0 } },
   setup(props) {
-    const total = computed(() => (props.retail || 0) + (props.wholesale || 0));
+    const total = computed(() => (props.retail || 0) + (props.semi || 0) + (props.wholesale || 0));
     const share = (v) => (total.value ? (v / total.value) * 100 : 0);
     return { total, share, money, percent };
   },
@@ -123,10 +123,12 @@ export const SplitBar = {
     <div class="split-wrap">
       <div class="split-bar" role="img" :aria-label="'Détail ' + money(retail) + ' (' + percent(share(retail)) + '), gros ' + money(wholesale) + ' (' + percent(share(wholesale)) + ')'">
         <i v-if="retail > 0" class="retail" :style="{ flexGrow: retail }" :title="'Détail : ' + money(retail) + ' — ' + percent(share(retail))"></i>
+        <i v-if="semi > 0" class="semi" :style="{ flexGrow: semi }" :title="'Demi-gros : ' + money(semi) + ' — ' + percent(share(semi))"></i>
         <i v-if="wholesale > 0" class="wholesale" :style="{ flexGrow: wholesale }" :title="'Gros : ' + money(wholesale) + ' — ' + percent(share(wholesale))"></i>
       </div>
       <div class="split-legend">
         <span><i class="k retail"></i>Détail <b>{{ money(retail) }}</b> <span class="faint">{{ percent(share(retail)) }}</span></span>
+        <span v-if="semi > 0"><i class="k semi"></i>Demi-gros <b>{{ money(semi) }}</b> <span class="faint">{{ percent(share(semi)) }}</span></span>
         <span><i class="k wholesale"></i>Gros <b>{{ money(wholesale) }}</b> <span class="faint">{{ percent(share(wholesale)) }}</span></span>
       </div>
     </div>`,

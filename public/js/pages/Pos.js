@@ -18,12 +18,15 @@ import {
   unitsPer,
   unitLabel,
   sellsWholesale,
+  sellsSemi,
+  saleTypes,
   hasPack,
   stockText,
   stockLevel,
   saleNo,
   timeFr,
   MODE_LABEL,
+  TYPE_LABEL,
 } from '../format.js';
 import { Icon, Sheet, Empty } from '../components/ui.js';
 import { Scanner, Recognize, PhotoButton } from '../components/camera.js';
@@ -31,7 +34,9 @@ import CustomerPicker from '../components/CustomerPicker.js';
 import { printTicket, printInvoice, saleText, openWhatsApp, openSms } from '../print.js';
 import { sameCode } from '../barcode.js';
 
-const MODE_NAME = { retail: 'Vente au détail', wholesale: 'Vente en gros' };
+const MODE_NAME = { retail: 'Vente au détail', semi: 'Vente en demi-gros', wholesale: 'Vente en gros' };
+const MODES = ['retail', 'semi', 'wholesale'];
+const modeOf = (m) => (MODES.includes(m) ? m : 'retail');
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const pad = (n) => String(n).padStart(2, '0');
 const localNow = (d = new Date()) =>
@@ -51,8 +56,9 @@ const CartView = {
           <button v-if="closable" type="button" class="icon-btn" @click="$emit('close')" :aria-label="t('Fermer le panier')"><Icon name="x" /></button>
         </div>
         <div v-if="c.cart.order" class="order-tag"><Icon name="receipt" size="sm" />{{ t('Commande n° {n} · vendeur {s}', { n: c.cart.order.id, s: c.cart.order.seller_name }) }}</div>
-        <div class="mode-switch" role="group" :aria-label="t('Mode de vente')">
+        <div class="mode-switch" :class="{ three: c.hasSemi }" role="group" :aria-label="t('Mode de vente')">
           <button type="button" class="retail" :class="{ on: c.mode === 'retail' }" @click="c.setMode('retail')">{{ t('Détail') }}</button>
+          <button v-if="c.hasSemi" type="button" class="semi" :class="{ on: c.mode === 'semi' }" @click="c.setMode('semi')">{{ t('Demi-gros') }}</button>
           <button type="button" class="wholesale" :class="{ on: c.mode === 'wholesale' }" @click="c.setMode('wholesale')">{{ t('Gros') }}</button>
         </div>
         <button type="button" class="customer-btn" @click="c.picking = true">
@@ -69,7 +75,7 @@ const CartView = {
       <div class="cart-lines">
         <div v-if="!c.lines.length" class="cart-empty">
           <Icon name="cart" />
-          <p>{{ t('Touchez un produit pour l’ajouter.') }}<br>{{ t('Le mode {m} s’applique aux nouveaux articles.', { m: c.mode === 'wholesale' ? t('Gros') : t('Détail') }) }}</p>
+          <p>{{ t('Touchez un produit pour l’ajouter.') }}<br>{{ t('Le mode {m} s’applique aux nouveaux articles.', { m: c.typeLabel(c.mode) }) }}</p>
         </div>
         <div v-for="l in c.lines" :key="l.key" class="line">
           <div class="l-name">
@@ -85,7 +91,7 @@ const CartView = {
           </div>
           <div class="l-total">{{ c.money(l.total, { bare: true }) }}</div>
           <div class="l-controls">
-            <button type="button" class="line-type" :class="l.sale_type" :disabled="!l.canToggle" @click="c.toggleLine(l)" :title="l.canToggle ? t('Changer gros / détail') : ''">{{ l.sale_type === 'wholesale' ? t('Gros') : t('Détail') }}</button>
+            <button type="button" class="line-type" :class="l.sale_type" :disabled="!l.canToggle" @click="c.toggleLine(l)" :title="l.canToggle ? t('Changer le type de vente') : ''">{{ c.typeLabel(l.sale_type) }}</button>
             <div class="qty">
               <button type="button" @click="c.step(l, -1)" :aria-label="t('Diminuer')"><Icon name="minus" size="sm" /></button>
               <input :value="c.fmtQty(l.qty)" inputmode="decimal" @focus="$event.target.select()" @change="c.setQty(l, $event.target.value, $event)" @keydown.enter="$event.target.blur()" :aria-label="t('Quantité') + ' ' + l.name" />
@@ -122,7 +128,7 @@ const CartView = {
 export default {
   components: { Icon, Sheet, Empty, CartView, CustomerPicker, Scanner, Recognize, PhotoButton },
   setup() {
-    const mode = ref(local.get('mode', 'retail') === 'wholesale' ? 'wholesale' : 'retail');
+    const mode = ref(modeOf(local.get('mode', 'retail')));
     const saved = local.get('cart', null);
     const cart = reactive({
       client_id: saved?.client_id || newId(),
@@ -189,13 +195,17 @@ export default {
     const inCart = computed(() => {
       const m = new Map();
       for (const it of cart.items) {
-        const q = m.get(it.product_id) || { retail: 0, wholesale: 0 };
+        const q = m.get(it.product_id) || { retail: 0, semi: 0, wholesale: 0 };
         q[it.sale_type] = round3(q[it.sale_type] + Number(it.qty));
         m.set(it.product_id, q);
       }
       return m;
     });
-    const mixed = computed(() => new Set(cart.items.map((it) => it.sale_type)).size > 1);
+    // Types présents dans le panier (du plus grand au plus petit), pour le titre « Gros + détail »
+    const typesIn = computed(() => ['wholesale', 'semi', 'retail'].filter((x) => cart.items.some((it) => it.sale_type === x)));
+    // Le demi-gros n'apparaît que si au moins un produit a un prix demi-gros
+    const hasSemi = computed(() => store.products.some(sellsSemi));
+    const typeLabel = (x) => t(TYPE_LABEL[x] || 'Détail');
     const lines = computed(() =>
       cart.items.map((it) => {
         const p = byId.value.get(it.product_id);
@@ -216,7 +226,7 @@ export default {
           price,
           custom: it.unit_price !== null && it.unit_price !== undefined,
           total: roundMoney(Number(it.qty) * price),
-          canToggle: sellsWholesale(p),
+          canToggle: saleTypes(p).length > 1,
           warn,
         };
       }),
@@ -238,6 +248,13 @@ export default {
       );
     });
 
+    /** Place laissée au nom selon le nombre de pastilles (gros, demi-gros, détail). */
+    const badgeClass = (q) => {
+      if (!q) return null;
+      const n = [q.retail, q.semi, q.wholesale].filter(Boolean).length;
+      return { 'has-qty': n > 0, 'has-both': n === 2, 'has-three': n === 3 };
+    };
+
     const flash = (id) => {
       flashId.value = 0;
       requestAnimationFrame(() => (flashId.value = id));
@@ -247,7 +264,11 @@ export default {
     };
 
     const add = (p, amount = 1) => {
-      const type = mode.value;
+      let type = mode.value;
+      if (type === 'semi' && !sellsSemi(p)) {
+        type = 'retail';
+        toast(t('« {p} » n’a pas de prix demi-gros : ajouté au détail.', { p: pname(p) }));
+      }
       if (!allowNegative.value) {
         const after = needOf(p.id) + amount * unitsPer(p, type);
         if (after > Number(p.stock) + 1e-9) {
@@ -313,7 +334,10 @@ export default {
     const toggleLine = (l) => {
       const it = cart.items.find((i) => i.key === l.key);
       if (!it) return;
-      it.sale_type = it.sale_type === 'wholesale' ? 'retail' : 'wholesale';
+      const p = byId.value.get(it.product_id);
+      const types = p ? saleTypes(p) : ['retail'];
+      const at = types.indexOf(it.sale_type);
+      it.sale_type = types[(at + 1) % types.length] || 'retail';
       it.unit_price = null;
     };
     const editPrice = (l) => {
@@ -350,7 +374,13 @@ export default {
       if (m === mode.value) return;
       mode.value = m;
       if (cart.items.length) {
-        toast(m === 'wholesale' ? t('Les prochains articles seront ajoutés en gros. Le panier ne change pas.') : t('Les prochains articles seront ajoutés au détail. Le panier ne change pas.'));
+        toast(
+          m === 'wholesale'
+            ? t('Les prochains articles seront ajoutés en gros. Le panier ne change pas.')
+            : m === 'semi'
+              ? t('Les prochains articles seront ajoutés en demi-gros. Le panier ne change pas.')
+              : t('Les prochains articles seront ajoutés au détail. Le panier ne change pas.'),
+        );
       }
     };
 
@@ -388,7 +418,7 @@ export default {
       cart.discount = h.discount || 0;
       cart.note = h.note || '';
       cart.order = h.order || null;
-      mode.value = h.mode === 'wholesale' ? 'wholesale' : 'retail';
+      mode.value = modeOf(h.mode);
       held.value = held.value.filter((x) => x.id !== h.id);
       local.set('held', held.value);
       showHeld.value = false;
@@ -435,7 +465,7 @@ export default {
       cart.discount = 0;
       cart.note = o.note || '';
       cart.order = null;
-      mode.value = o.mode === 'wholesale' ? 'wholesale' : 'retail';
+      mode.value = modeOf(o.mode);
     };
     const sendOrder = async () => {
       if (!cart.items.length || sending.value) return;
@@ -695,7 +725,13 @@ export default {
     const ctx = reactive({
       cart,
       mode,
-      modeName: computed(() => (mixed.value ? 'Gros + détail' : MODE_NAME[mode.value])),
+      modeName: computed(() => {
+        const ty = typesIn.value;
+        if (ty.length < 2) return MODE_NAME[mode.value];
+        return ty.join() === 'wholesale,retail' ? 'Gros + détail' : ty.map(typeLabel).join(' + ');
+      }),
+      hasSemi,
+      typeLabel,
       lines,
       subtotal,
       total,
@@ -737,6 +773,7 @@ export default {
       filtered,
       visible,
       inCart,
+      badgeClass,
       showCart,
       showHeld,
       picking,
@@ -785,6 +822,9 @@ export default {
       listPrice,
       hasPack,
       sellsWholesale,
+      sellsSemi,
+      hasSemi,
+      unitLabel,
       stockText,
       stockLevel,
       saleNo,
@@ -807,8 +847,9 @@ export default {
             </div>
             <button type="button" class="btn icon-only cam-btn" @click="scanning = true" :title="t('Scanner un code-barres')" :aria-label="t('Scanner un code-barres')"><Icon name="scan" /></button>
             <PhotoButton cls="btn icon-only cam-btn" icon="camera" :title="t('Reconnaître par photo')" @file="photo = $event" />
-            <div class="mode-switch hide-desktop-cart" role="group" :aria-label="t('Mode de vente')">
+            <div class="mode-switch hide-desktop-cart" :class="{ three: hasSemi }" role="group" :aria-label="t('Mode de vente')">
               <button type="button" class="retail" :class="{ on: mode === 'retail' }" @click="setMode('retail')">{{ t('Détail') }}</button>
+              <button v-if="hasSemi" type="button" class="semi" :class="{ on: mode === 'semi' }" @click="setMode('semi')">{{ t('Demi-gros') }}</button>
               <button type="button" class="wholesale" :class="{ on: mode === 'wholesale' }" @click="setMode('wholesale')">{{ t('Gros') }}</button>
             </div>
           </div>
@@ -824,15 +865,17 @@ export default {
         </div>
 
         <div class="pos-grid">
-          <button v-for="p in visible" :key="p.id" type="button" class="tile" :class="{ flash: flashId === p.id }"
+          <button v-for="p in visible" :key="p.id" type="button" class="tile" :class="{ flash: flashId === p.id, p3: sellsSemi(p) && sellsWholesale(p) }"
                   :disabled="!allowNegative && p.stock <= 0" @click="add(p)">
-            <span class="t-name" :class="{ 'has-qty': inCart.get(p.id), 'has-both': inCart.get(p.id)?.retail && inCart.get(p.id)?.wholesale }">{{ pname(p) }}</span>
+            <span class="t-name" :class="badgeClass(inCart.get(p.id))">{{ pname(p) }}</span>
             <span class="t-qty" v-if="inCart.get(p.id)">
               <b v-if="inCart.get(p.id).wholesale" class="wholesale" :title="t('Gros')">{{ fmtQty(inCart.get(p.id).wholesale) }}</b>
+              <b v-if="inCart.get(p.id).semi" class="semi" :title="t('Demi-gros')">{{ fmtQty(inCart.get(p.id).semi) }}</b>
               <b v-if="inCart.get(p.id).retail" class="retail" :title="t('Détail')">{{ fmtQty(inCart.get(p.id).retail) }}</b>
             </span>
             <span class="t-prices">
               <span class="price-line retail" :class="{ active: mode === 'retail' }"><i class="k"></i><b>{{ money(p.retail_price, { bare: true }) }}</b>/ {{ p.unit }}</span>
+              <span v-if="sellsSemi(p)" class="price-line semi" :class="{ active: mode === 'semi' }"><i class="k"></i><b>{{ money(listPrice(p, 'semi'), { bare: true }) }}</b>/ {{ unitLabel(p, 'semi') }}</span>
               <span v-if="sellsWholesale(p)" class="price-line wholesale" :class="{ active: mode === 'wholesale' }"><i class="k"></i><b>{{ money(listPrice(p, 'wholesale'), { bare: true }) }}</b>/ {{ hasPack(p) ? p.pack_unit : p.unit }}</span>
             </span>
             <span class="t-stock" :class="{ low: stockLevel(p) !== 'ok' }">

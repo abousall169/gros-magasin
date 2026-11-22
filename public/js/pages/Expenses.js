@@ -1,15 +1,22 @@
 // Dépenses du magasin (transport, loyer, électricité…), payées depuis la caisse ou non.
+// Pour le caissier : ses dépenses, celles du jour par défaut ; il peut supprimer une erreur pendant sa journée.
 import { ref, computed, watch, onMounted, onUnmounted } from '../vue.js';
 import { api } from '../api.js';
 import { store, can, onChange, toast, toastError, ask, CASH } from '../store.js';
 import { money, parseNum, when } from '../format.js';
 import { t, payLabel } from '../i18n.js';
 import { Icon, Sheet, Empty, Skeleton, PeriodPicker, periodRange } from '../components/ui.js';
+import { useDay, ExpenseSheet } from '../components/till.js';
 
 export default {
-  components: { Icon, Sheet, Empty, Skeleton, PeriodPicker },
+  components: { Icon, Sheet, Empty, Skeleton, PeriodPicker, ExpenseSheet },
   setup() {
-    const period = ref({ id: 'month', ...periodRange('month') });
+    // Caissier (sans « expenses.manage ») : journée en cours par défaut
+    const desk = !can('expenses.manage');
+    const period = ref(desk ? { id: 'today', ...periodRange('today') } : { id: 'month', ...periodRange('month') });
+    const { day, loadDay } = desk && can('cash.own') ? useDay() : { day: ref(null), loadDay: () => {} };
+    /** Le caissier peut supprimer une de ses dépenses saisie par erreur, tant que sa journée n'est pas terminée. */
+    const canRemove = (e) => can('expenses.manage') || (e.user_id === store.me.id && day.value && e.created_at >= day.value.from);
     const rows = ref(null);
     const categories = ref([]);
     const form = ref(null);
@@ -39,33 +46,22 @@ export default {
       return [...m.entries()].sort((a, b) => b[1] - a[1]);
     });
     const start = () => {
-      form.value = { amount: '', category: categories.value[0] || 'Transport', method: CASH, note: '', busy: false };
+      form.value = true;
     };
-    const save = async () => {
-      const f = form.value;
-      const amount = parseNum(f.amount);
-      if (!(amount > 0)) return toast(t('Montant invalide.'), 'error');
-      f.busy = true;
-      try {
-        await api.post('/expenses', { amount, category: f.category, method: f.method, note: f.note });
-        form.value = null;
-        toast(t('Dépense enregistrée.'), 'success');
-        load();
-      } catch (e) {
-        toastError(e);
-        f.busy = false;
-      }
+    const saved = () => {
+      load();
+      loadDay();
     };
     const remove = async (e) => {
       if (!(await ask({ title: t('Supprimer cette dépense ?'), message: `${e.category} — ${money(e.amount)}`, confirm: t('Supprimer'), danger: true }))) return;
       try {
         await api.del(`/expenses/${e.id}`);
-        load();
+        saved();
       } catch (err) {
         toastError(err);
       }
     };
-    return { store, period, rows, categories, form, total, byCat, start, save, remove, can, money, when, payLabel };
+    return { store, desk, period, rows, categories, form, total, byCat, start, saved, remove, canRemove, can, money, when, payLabel };
   },
   template: `
     <div class="page">
@@ -86,22 +82,11 @@ export default {
             <div class="sub">{{ when(e.created_at) }} · {{ payLabel(e.method) }} · {{ e.user_name }}</div>
           </div>
           <div class="end num strong">{{ money(e.amount) }}</div>
-          <button v-if="can('expenses.manage')" type="button" class="icon-btn sm" @click="remove(e)" :aria-label="t('Supprimer')"><Icon name="trash" size="sm" /></button>
+          <button v-if="canRemove(e)" type="button" class="icon-btn sm" @click="remove(e)" :aria-label="t('Supprimer')"><Icon name="trash" size="sm" /></button>
         </div>
       </div>
       <Empty v-else icon="wallet" :title="t('Aucune dépense sur cette période')" :text="t('Notez ici l’argent sorti de la caisse (transport, manutention, repas…) pour que la caisse du soir tombe juste.')" />
 
-      <Sheet v-if="form" :title="t('Nouvelle dépense')" size="narrow" @close="form = null">
-        <form id="exp-form" class="stack" @submit.prevent="save">
-          <div class="field"><label for="ex-amount">{{ t('Montant') }}</label><input id="ex-amount" class="input num" v-model="form.amount" inputmode="decimal" required autofocus style="font-size:1.25rem;font-weight:700" /></div>
-          <div class="field"><label for="ex-cat">{{ t('Catégorie') }}</label><input id="ex-cat" class="input" v-model="form.category" list="exp-cats" maxlength="60" required /><datalist id="exp-cats"><option v-for="c in categories" :key="c" :value="c"></option></datalist></div>
-          <div class="field"><span class="label">{{ t('Payé par') }}</span>
-            <div class="methods"><button v-for="m in store.paymentMethods" :key="m" type="button" class="method" :class="{ on: form.method === m }" @click="form.method = m">{{ payLabel(m) }}</button></div>
-            <span class="hint">{{ t('« Espèces » = argent pris dans la caisse : il sera déduit de la caisse du jour.') }}</span>
-          </div>
-          <div class="field"><label for="ex-note">{{ t('Détail') }}</label><input id="ex-note" class="input" v-model="form.note" maxlength="300" :placeholder="t('Ex. : taxi livraison Boutique Awa')" /></div>
-        </form>
-        <template #foot><button type="button" class="btn" @click="form = null">{{ t('Annuler') }}</button><button type="submit" form="exp-form" class="btn primary" :class="{ loading: form.busy }" :disabled="form.busy">{{ t('Enregistrer') }}</button></template>
-      </Sheet>
+      <ExpenseSheet v-if="form" @close="form = null" @saved="saved" />
     </div>`,
 };

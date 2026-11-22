@@ -187,7 +187,8 @@ r.get('/reports/summary', requirePerm('reports.view'), (req, res) => {
   const products = q.all(
     `SELECT i.product_id, i.name, p.unit, p.pack_unit, p.pack_size,
             ROUND(SUM(i.base_qty), 3) AS qty, ROUND(SUM(i.total), 2) AS revenue, ROUND(SUM(i.cost_total), 2) AS cost,
-            ROUND(SUM(CASE WHEN i.sale_type = 'wholesale' THEN i.total ELSE 0 END), 2) AS wholesale
+            ROUND(SUM(CASE WHEN i.sale_type = 'wholesale' THEN i.total ELSE 0 END), 2) AS wholesale,
+            ROUND(SUM(CASE WHEN i.sale_type = 'semi' THEN i.total ELSE 0 END), 2) AS semi
        FROM sale_items i JOIN sales s ON s.id = i.sale_id LEFT JOIN products p ON p.id = i.product_id
       WHERE ${completed} GROUP BY i.product_id, i.name ORDER BY revenue DESC LIMIT 200`,
     ...range,
@@ -361,7 +362,7 @@ r.get('/reports/cash', requirePerm('cash.own', 'cash.all'), (req, res) => {
 });
 
 // ---- Exports CSV ---------------------------------------------------------------
-const MODE = { retail: 'Détail', wholesale: 'Gros', mixed: 'Gros + détail' };
+const MODE = { retail: 'Détail', semi: 'Demi-gros', wholesale: 'Gros', mixed: 'Gros + détail' };
 
 r.get('/export/sales.csv', requirePerm('reports.view'), (req, res) => {
   const [from, to] = dayRange(req.query.from, req.query.to);
@@ -410,7 +411,7 @@ r.get('/export/sale-items.csv', requirePerm('reports.view'), (req, res) => {
     ['vente', (i) => i.sale_id],
     ['date', (i) => i.created_at],
     ['produit', (i) => i.name],
-    ['type', (i) => (i.sale_type === 'wholesale' ? 'Gros' : 'Détail')],
+    ['type', (i) => MODE[i.sale_type] || 'Détail'],
     ['quantite', (i) => i.qty],
     ['unite', (i) => i.unit_label],
     ['prix_unitaire', (i) => i.unit_price],

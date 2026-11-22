@@ -97,7 +97,7 @@ export default {
         </div>
         <div class="form-grid">
           <div class="field"><label for="lb-layout">Format de la feuille A4</label><select id="lb-layout" class="select" v-model="layoutId"><option v-for="l in LABEL_LAYOUTS" :key="l.id" :value="l.id">{{ l.name }}</option></select></div>
-          <div class="field"><label for="lb-price">Prix affiché</label><select id="lb-price" class="select" v-model="priceType" :disabled="!showPrice"><option value="retail">Prix de détail</option><option value="wholesale">Prix de gros</option></select></div>
+          <div class="field"><label for="lb-price">Prix affiché</label><select id="lb-price" class="select" v-model="priceType" :disabled="!showPrice"><option value="retail">Prix de détail</option><option value="semi">Prix demi-gros</option><option value="wholesale">Prix de gros</option></select></div>
         </div>
         <div class="row wrap">
           <label class="check"><input type="checkbox" v-model="showPrice" /><span>Afficher le prix</span></label>

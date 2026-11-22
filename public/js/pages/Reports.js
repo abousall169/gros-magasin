@@ -203,8 +203,9 @@ const CashClosing = {
         <div class="panel-head"><h2>{{ t('Clôtures précédentes') }}</h2></div>
         <div class="list">
           <div v-for="s in sessions.history" :key="s.id" class="list-row">
-            <div class="main-col"><div class="title">{{ dateTimeFr(s.closed_at) }} · {{ s.user_name || t('Tout le magasin') }}</div><div class="sub">{{ t('Attendu') }} {{ money(s.expected) }} · {{ t('compté') }} {{ money(s.counted) }}<template v-if="s.closed_by_name"> · {{ s.closed_by_name }}</template><template v-if="s.note"> · {{ s.note }}</template></div></div>
-            <span class="badge" :class="Math.abs(s.difference) < 0.005 ? 'paid' : 'danger'">{{ Math.abs(s.difference) < 0.005 ? t('Juste') : money(s.difference, { sign: true }) }}</span>
+            <div class="main-col"><div class="title">{{ dateTimeFr(s.closed_at) }} · {{ s.user_name || t('Tout le magasin') }}</div><div class="sub">{{ t('Attendu') }} {{ money(s.expected) }} · {{ s.counted === null ? t('non comptées') : t('compté') + ' ' + money(s.counted) }}<template v-if="s.closed_by_name"> · {{ s.closed_by_name }}</template><template v-if="s.note"> · {{ s.note }}</template></div></div>
+            <span v-if="s.counted === null" class="badge">{{ t('Non compté') }}</span>
+            <span v-else class="badge" :class="Math.abs(s.difference) < 0.005 ? 'paid' : 'danger'">{{ Math.abs(s.difference) < 0.005 ? t('Juste') : money(s.difference, { sign: true }) }}</span>
             <button type="button" class="icon-btn sm" @click="printSession(s)" :aria-label="t('Imprimer')"><Icon name="printer" size="sm" /></button>
           </div>
         </div>
@@ -237,7 +238,7 @@ export default {
     onMounted(load);
     const split = computed(() => {
       const by = Object.fromEntries((d.value?.byType || []).map((x) => [x.sale_type, x.revenue]));
-      return { retail: by.retail || 0, wholesale: by.wholesale || 0 };
+      return { retail: by.retail || 0, semi: by.semi || 0, wholesale: by.wholesale || 0 };
     });
     const collected = computed(() => {
       const m = new Map();
@@ -286,7 +287,7 @@ export default {
               </div>
               <div class="split">
                 <span class="label">Gros et détail</span>
-                <SplitBar v-if="split.retail + split.wholesale > 0" :retail="split.retail" :wholesale="split.wholesale" />
+                <SplitBar v-if="split.retail + split.semi + split.wholesale > 0" :retail="split.retail" :semi="split.semi" :wholesale="split.wholesale" />
                 <p v-else class="small faint">Aucune vente sur la période.</p>
               </div>
             </section>

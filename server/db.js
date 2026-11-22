@@ -354,6 +354,44 @@ const MIGRATIONS = [
   );
   CREATE INDEX idx_orders_status ON orders(status, id);
   `,
+
+  // v4 : vente en demi-gros, entre le détail et le gros. Chaque produit peut avoir un prix demi-gros,
+  // par unité intermédiaire (paquet, demi-carton… : semi_unit + semi_size) ou par unité de base.
+  // La table sale_items est refaite pour autoriser le type « semi » (contrainte CHECK).
+  `
+  ALTER TABLE products ADD COLUMN semi_unit TEXT;
+  ALTER TABLE products ADD COLUMN semi_size REAL NOT NULL DEFAULT 1;
+  ALTER TABLE products ADD COLUMN semi_price REAL NOT NULL DEFAULT 0;
+
+  CREATE TABLE sale_items_new (
+    id INTEGER PRIMARY KEY,
+    sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    sale_type TEXT NOT NULL CHECK (sale_type IN ('retail', 'semi', 'wholesale')),
+    unit_label TEXT NOT NULL,
+    qty REAL NOT NULL,
+    units_per REAL NOT NULL DEFAULT 1,
+    base_qty REAL NOT NULL,
+    unit_price REAL NOT NULL,
+    list_price REAL NOT NULL,
+    total REAL NOT NULL,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    cost_total REAL NOT NULL DEFAULT 0,
+    tax_rate REAL NOT NULL DEFAULT 0,
+    tax_amount REAL NOT NULL DEFAULT 0,
+    returned_qty REAL NOT NULL DEFAULT 0,
+    lots TEXT NOT NULL DEFAULT '[]'
+  );
+  INSERT INTO sale_items_new (id, sale_id, product_id, name, sale_type, unit_label, qty, units_per, base_qty, unit_price, list_price,
+                              total, unit_cost, cost_total, tax_rate, tax_amount, returned_qty, lots)
+    SELECT id, sale_id, product_id, name, sale_type, unit_label, qty, units_per, base_qty, unit_price, list_price,
+           total, unit_cost, cost_total, tax_rate, tax_amount, returned_qty, lots FROM sale_items;
+  DROP TABLE sale_items;
+  ALTER TABLE sale_items_new RENAME TO sale_items;
+  CREATE INDEX idx_sale_items_sale ON sale_items(sale_id);
+  CREATE INDEX idx_sale_items_product ON sale_items(product_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

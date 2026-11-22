@@ -69,6 +69,12 @@ export function seedDemo(admin) {
     const catIds = {};
     for (const c of [...new Set(PRODUCTS.map((p) => p[1]))]) catIds[c] = q.run('INSERT INTO categories (name) VALUES (?)', c).id;
 
+    // Demi-gros de démonstration : [unité intermédiaire (vide = prix par unité), contenance, prix]
+    const SEMI = {
+      'Boisson gazeuse 33 cl': ['pack', 6, 2250],
+      'Huile végétale 1 L': ['pack', 6, 7500],
+      'Riz brisé': ['', 1, 425],
+    };
     const products = PRODUCTS.map(([name, cat, unit, retail, packUnit, packSize, wholesale, cost, stock, min]) => {
       const id = q.run(
         `INSERT INTO products (name, category_id, unit, retail_price, pack_unit, pack_size, wholesale_price, cost_price, min_stock, stock, active, created_at, updated_at)
@@ -85,6 +91,10 @@ export function seedDemo(admin) {
         at0,
         at0,
       ).id;
+      if (SEMI[name]) {
+        const [semiUnit, semiSize, semiPrice] = SEMI[name];
+        q.run('UPDATE products SET semi_unit = ?, semi_size = ?, semi_price = ? WHERE id = ?', semiUnit || null, semiSize, semiPrice, id);
+      }
       // Stock de départ plus large pour couvrir l'historique de ventes simulé
       const initialQty = Math.max(stock * 2, min * 3);
       recordMovement({ productId: id, type: 'initial', qty: initialQty, reason: 'Stock initial', userId: admin.id, at: at0 });

@@ -44,7 +44,7 @@ export default {
     const collected = computed(() => (d.value?.collected || []).reduce((s, x) => s + x.amount, 0));
     const split = computed(() => {
       const by = Object.fromEntries((d.value?.byType || []).map((x) => [x.sale_type, x.amount]));
-      return { retail: by.retail || 0, wholesale: by.wholesale || 0 };
+      return { retail: by.retail || 0, semi: by.semi || 0, wholesale: by.wholesale || 0 };
     });
     const vsYesterday = computed(() => {
       if (!d.value) return '';
@@ -94,7 +94,7 @@ export default {
           </div>
           <div class="split">
             <div class="row between"><span class="label">Gros et détail aujourd'hui</span></div>
-            <SplitBar v-if="split.retail + split.wholesale > 0" :retail="split.retail" :wholesale="split.wholesale" />
+            <SplitBar v-if="split.retail + split.semi + split.wholesale > 0" :retail="split.retail" :semi="split.semi" :wholesale="split.wholesale" />
             <p v-else class="small faint">Aucune vente pour l'instant aujourd'hui.</p>
           </div>
         </section>

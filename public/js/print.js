@@ -2,12 +2,15 @@
 // factures A4, relevés, clôtures, étiquettes ; partage par WhatsApp ou SMS.
 import { store, CASH, toast } from './store.js';
 import { t, pname, payLabel } from './i18n.js';
-import { money, qty, dateTimeFr, timeFr, dateFr, saleNo, amountInWords, MODE_LABEL, plural, dayLong } from './format.js';
+import { money, qty, dateTimeFr, timeFr, dateFr, saleNo, amountInWords, MODE_LABEL, TYPE_LABEL, plural, dayLong, listPrice, unitLabel } from './format.js';
 import { hasThermal, sendSaleTicket, sendPaymentReceipt, sendSessionReport } from './printer.js';
 import { barcodeSvg, encode } from './barcode.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+/** Mention du type de vente à côté de l'article : « gros », « demi-gros » (rien pour le détail). */
+export const typeTag = (it) => (it.sale_type === 'wholesale' ? t('gros') : it.sale_type === 'semi' ? t('demi-gros') : '');
 
 function printHTML(html, format) {
   const area = document.getElementById('print-area');
@@ -64,7 +67,7 @@ export function printTicket(sale) {
   const rows = (sale.items || [])
     .map(
       (it) => `
-      <tr><td colspan="2">${itemName(it)}${it.sale_type === 'wholesale' ? ` <b>(${esc(t('gros'))})</b>` : ''}</td></tr>
+      <tr><td colspan="2">${itemName(it)}${typeTag(it) ? ` <b>(${esc(typeTag(it))})</b>` : ''}</td></tr>
       <tr><td class="item-sub">${itemQty(it)} × ${money(it.unit_price, { bare: true })}${it.returned_qty > 0 ? ` · ${esc(t('Retourné'))} ${qty(it.returned_qty)}` : ''}</td><td class="r">${money(it.total, { bare: true })}</td></tr>`,
     )
     .join('');
@@ -113,7 +116,7 @@ export function printInvoice(sale, { proforma = false } = {}) {
       (it, i) => `<tr>
         <td>${i + 1}</td>
         <td>${esc(it.name)}${it.returned_qty > 0 ? ` <small>(retourné : ${qty(it.returned_qty)})</small>` : ''}</td>
-        <td>${it.sale_type === 'wholesale' ? 'Gros' : 'Détail'}</td>
+        <td>${TYPE_LABEL[it.sale_type] || 'Détail'}</td>
         <td class="r">${qty(it.qty)}</td>
         <td>${esc(plural(it.unit_label, it.qty))}</td>
         <td class="r">${money(it.unit_price, { bare: true })}</td>
@@ -250,19 +253,28 @@ export function printSession(session) {
   const s = store.settings;
   const w = s.receipt_width === '58' ? '58' : '80';
   const b = session.breakdown || {};
-  const line = (label, v, bold) => `<tr><td>${bold ? '<b>' : ''}${esc(label)}${bold ? '</b>' : ''}</td><td class="r">${bold ? '<b>' : ''}${money(v, { bare: true })}${bold ? '</b>' : ''}</td></tr>`;
+  const cell = (label, v, bold) => `<tr><td>${bold ? '<b>' : ''}${esc(label)}${bold ? '</b>' : ''}</td><td class="r">${bold ? '<b>' : ''}${v}${bold ? '</b>' : ''}</td></tr>`;
+  const line = (label, v, bold) => cell(label, money(v, { bare: true }), bold);
+  // Fin de journée du caissier : pas de fond de caisse, espèces comptées facultatives
+  const dayEnd = !!session.user_id && !(Number(b.opening_float) > 0);
   const html = `
   <div class="rcpt w${w}"${dirAttr()}>
     ${storeHeader()}
     <div class="hr"></div>
-    <div class="c"><b>${esc(t('CLÔTURE DE CAISSE'))}</b></div>
+    <div class="c"><b>${esc(dayEnd ? t('FIN DE JOURNÉE') : t('CLÔTURE DE CAISSE'))}</b></div>
     <div class="c">${session.user_name ? `${esc(t('Caisse de'))} ${esc(session.user_name)}` : esc(t('Tout le magasin'))}</div>
     <div class="c">${dateTimeFr(session.opened_at)} → ${dateTimeFr(session.closed_at)}</div>
     <div class="hr"></div>
+    ${b.till_total != null ? `<table>
+      ${line(`${t('Ventes')} (${b.count})`, b.sales_total)}
+      ${line(`− ${t('Dépenses')}`, b.expenses_total)}
+      ${line(t('TOTAL CAISSE'), b.till_total, true)}
+    </table>
+    <div class="hr"></div>` : ''}
     <table>
-      ${line(t('Fond de caisse'), b.opening_float)}
+      ${b.opening_float > 0 ? line(t('Fond de caisse'), b.opening_float) : ''}
       ${line(`+ ${t('Ventes en espèces')}`, b.sales)}
-      ${line(`+ ${t('Versements des clients')}`, b.payments)}
+      ${b.payments ? line(`+ ${t('Versements des clients')}`, b.payments) : ''}
       ${b.refunds ? line(`− ${t('Retours remboursés')}`, b.refunds) : ''}
       ${line(`− ${t('Dépenses')}`, b.expenses)}
       ${b.suppliers ? line(`− ${t('Paiements fournisseurs')}`, b.suppliers) : ''}
@@ -270,10 +282,11 @@ export function printSession(session) {
     <div class="hr"></div>
     <table>
       ${line(t('Espèces attendues'), session.expected, true)}
-      ${line(t('Espèces comptées'), session.counted, true)}
-      ${line(t('Écart'), session.difference, true)}
+      ${session.counted === null ? cell(t('Espèces comptées'), esc(t('non comptées'))) : line(t('Espèces comptées'), session.counted, true)}
+      ${session.counted === null ? '' : line(t('Écart'), session.difference, true)}
     </table>
-    ${b.count != null ? `<div class="hr"></div><table>${line(`${t('Ventes encaissées')} (${b.count})`, b.sales_total)}${b.credit > 0 ? line(t('dont à crédit'), b.credit) : ''}</table>` : ''}
+    ${b.count != null && b.till_total == null ? `<div class="hr"></div><table>${line(`${t('Ventes encaissées')} (${b.count})`, b.sales_total)}${b.credit > 0 ? line(t('dont à crédit'), b.credit) : ''}</table>` : ''}
+    ${b.till_total != null && b.credit > 0 ? `<div class="hr"></div><table>${line(t('dont à crédit'), b.credit)}</table>` : ''}
     ${b.methods?.length ? `<div><b>${esc(t('Encaissé hors espèces'))}</b></div><table>${b.methods.map((m) => line(payLabel(m.method), m.amount)).join('')}</table>` : ''}
     ${b.expense_items?.length ? `<div class="hr"></div><div><b>${esc(t('Dépenses'))}</b></div><table>${b.expense_items.map((e) => line(`${timeFr(e.created_at)} ${e.category}${e.note ? ` · ${e.note}` : ''}${e.method !== CASH ? ` (${payLabel(e.method)})` : ''}`, e.amount)).join('')}</table>` : ''}
     ${session.note ? `<div>${esc(session.note)}</div>` : ''}
@@ -297,8 +310,8 @@ export function labelHTML(p, { w, h, showPrice = true, showAr = true, priceType 
   const small = h < 25;
   const nameSize = h >= 33 ? '10.5pt' : h >= 26 ? '9pt' : '7pt';
   const priceSize = h >= 33 ? '14pt' : h >= 26 ? '11pt' : '9pt';
-  const price = priceType === 'wholesale' && Number(p.wholesale_price) > 0 ? p.wholesale_price : p.retail_price;
-  const unit = priceType === 'wholesale' && p.pack_unit ? p.pack_unit : p.unit;
+  const price = listPrice(p, priceType);
+  const unit = unitLabel(p, priceType);
   const clamp = `display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;-webkit-line-clamp:${small ? 1 : 2};line-height:1.15`;
   return `<div class="sticker${cutLines ? ' cut' : ''}" style="width:${w}mm;height:${h}mm">
     <div>
@@ -351,7 +364,7 @@ export function saleText(sale) {
     '',
     ...(sale.items || []).map(
       (it) =>
-        `• ${(store.lang === 'ar' && it.name_ar) || it.name}${it.sale_type === 'wholesale' ? ` (${t('gros')})` : ''}\n   ${qty(it.qty)} ${plural(it.unit_label, it.qty)} × ${money(it.unit_price)} = ${money(it.total)}`,
+        `• ${(store.lang === 'ar' && it.name_ar) || it.name}${typeTag(it) ? ` (${typeTag(it)})` : ''}\n   ${qty(it.qty)} ${plural(it.unit_label, it.qty)} × ${money(it.unit_price)} = ${money(it.total)}`,
     ),
     '',
     sale.discount > 0 ? `${t('Remise')} : −${money(sale.discount)}` : null,

@@ -26,6 +26,9 @@
   --gros: #3040c4;
   --gros-soft: #e6e9fc;
   --gros-ink: #2b39b2;
+  --semi: #0b7a7a;
+  --semi-soft: #daf1f0;
+  --semi-ink: #095f5f;
   --credit: #d2391b;
   --credit-soft: #fde7e2;
   --credit-ink: #ad2e13;
@@ -80,6 +83,14 @@
   --mode-ink: var(--gros-ink);
   --mode-on: #ffffff;
   --mode-on-muted: rgba(255, 255, 255, 0.78);
+}
+/* Demi-gros : bleu-vert, entre l'ambre du détail et l'indigo du gros */
+.mode-semi {
+  --mode: var(--semi);
+  --mode-soft: var(--semi-soft);
+  --mode-ink: var(--semi-ink);
+  --mode-on: #ffffff;
+  --mode-on-muted: rgba(255, 255, 255, 0.8);
 }
 
 /* ---------- Base ---------- */
@@ -3228,29 +3239,6 @@ label.btn {
   font-size: var(--t-sm);
   vertical-align: middle;
 }
-.desk-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
-}
-.till-alert {
-  align-items: center;
-  margin-bottom: var(--s4);
-}
-.till-strip {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: calc(-1 * var(--s3)) 0 var(--s4);
-  color: var(--ink-2);
-}
-.till-strip i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--paid);
-}
 .till-h {
   display: flex;
   align-items: center;
@@ -3387,14 +3375,166 @@ label.btn {
     justify-content: center;
     min-height: 44px;
   }
-  .desk-actions {
-    width: 100%;
+}
+
+/* ---------- Demi-gros ---------- */
+.mode-switch button.semi.on {
+  background: var(--semi);
+  color: #fff;
+}
+.mode-semi .cart-band .mode-switch {
+  background: rgba(0, 0, 0, 0.22);
+}
+.cart-band .mode-switch button.semi.on {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(14, 17, 40, 0.25);
+}
+.mode-switch.three button {
+  min-width: 0;
+  flex: 1;
+  padding: 0 var(--s3);
+}
+.badge.semi {
+  background: var(--semi-soft);
+  color: var(--semi-ink);
+}
+.price-line.semi .k {
+  background: var(--semi);
+}
+.tile .t-qty b.semi {
+  background: var(--semi);
+  color: #fff;
+}
+.tile .t-name.has-three {
+  padding-right: 94px;
+}
+.line-type.semi {
+  background: var(--semi-soft);
+  color: var(--semi-ink);
+}
+.split-bar i.semi,
+.split-legend .k.semi {
+  background: var(--semi);
+}
+.form-section-title {
+  margin: var(--s2) 0 0;
+  font-size: var(--t-sm);
+  font-weight: 800;
+  color: var(--ink-2);
+}
+@media (max-width: 720px) {
+  .tile .t-name.has-three {
+    padding-right: 0;
   }
-  .desk-actions .btn {
-    flex: 1;
+}
+/* Fiche à trois prix (détail, demi-gros, gros) : plus haute. Un <button> étiré dans la grille ne donne pas
+   sa vraie hauteur à Chrome : la hauteur minimale doit être fixée ici. */
+.tile.p3 {
+  min-height: 160px;
+}
+@media (max-width: 760px) {
+  .tile.p3 {
+    min-height: 0;
   }
-  /* Le bouton « Ouvrir ma caisse » est déjà juste au-dessus */
-  .till-alert .btn {
+}
+
+
+/* ---------- Caissier : total caisse et fin de journée dans le menu ---------- */
+.rail-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.rail-total small {
+  color: var(--rail-muted);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rail-total strong {
+  font-size: var(--t-xl);
+  font-weight: 800;
+  line-height: 1.15;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.rail-total .cur {
+  margin-inline-start: 4px;
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--rail-muted);
+}
+.btn-end-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: 44px;
+  padding: 0 var(--s3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--credit);
+  color: #fff;
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.btn-end-day:hover {
+  background: var(--credit-ink);
+}
+.btn-end-day .lbl-short {
+  display: none;
+}
+.phone-till {
+  display: none;
+}
+@media (max-width: 1180px) {
+  .rail-total {
+    padding: var(--s2) 4px;
+    text-align: center;
+  }
+  .rail-total small {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  .rail-total strong {
+    font-size: var(--t-sm);
+  }
+  .rail-total .cur {
     display: none;
+  }
+  .btn-end-day {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 54px;
+    padding: 4px 2px;
+    font-size: 11px;
+  }
+  .btn-end-day .lbl {
+    display: none;
+  }
+  .btn-end-day .lbl-short {
+    display: inline;
+  }
+}
+@media (max-width: 760px) {
+  .phone-till {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    padding: var(--s2) var(--s4);
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    font-size: var(--t-sm);
+  }
+  .phone-till b {
+    font-size: var(--t-lg);
+    font-weight: 800;
+    margin-inline-start: 4px;
   }
 }

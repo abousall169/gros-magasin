@@ -1,10 +1,12 @@
 // Sessions de caisse : ouverture avec un fond de caisse, clôture avec les espèces comptées.
 // Une session couvre soit la caisse d'un vendeur, soit tout le magasin.
+// Le caissier, lui, n'ouvre rien : sa journée commence à la fin de la précédente (« Terminer la journée »)
+// et ses totaux repartent de zéro à chaque fin de journée.
 import { Router } from 'express';
 import { q, tx } from '../db.js';
 import { requirePerm } from '../auth.js';
 import { CASH } from '../settings.js';
-import { bad, notFound, forbidden, str, num, int, round2, nowLocal } from '../util.js';
+import { bad, notFound, forbidden, str, num, int, round2, nowLocal, todayLocal } from '../util.js';
 import { broadcast } from '../events.js';
 
 const r = Router();
@@ -79,7 +81,24 @@ export function cashBreakdown(session, until = nowLocal()) {
     from,
     until,
   );
-  return { opening_float: opening, sales, payments, refunds, expenses, suppliers, expected, count: Number(done.count) || 0, sales_total: round2(done.total), credit: round2(done.credit), methods, expense_items: expenseItems };
+  // Total caisse (vue du caissier) : total des ventes encaissées moins toutes les dépenses de la journée
+  const expensesTotal = val(`SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE created_at >= ? AND created_at <= ?${uf('user_id')}`, from, until);
+  return {
+    opening_float: opening,
+    sales,
+    payments,
+    refunds,
+    expenses,
+    suppliers,
+    expected,
+    count: Number(done.count) || 0,
+    sales_total: round2(done.total),
+    credit: round2(done.credit),
+    methods,
+    expense_items: expenseItems,
+    expenses_total: expensesTotal,
+    till_total: round2(done.total - expensesTotal),
+  };
 }
 
 const SESSION_SELECT = `
@@ -88,6 +107,25 @@ const SESSION_SELECT = `
     LEFT JOIN users u ON u.id = c.user_id
     LEFT JOIN users a ON a.id = c.opened_by
     LEFT JOIN users b ON b.id = c.closed_by`;
+
+/** 'AAAA-MM-JJ HH:MM:SS' + 1 seconde : la journée suivante ne recompte pas la seconde de la clôture. */
+function nextSecond(s) {
+  const [d, t] = s.split(' ');
+  const [y, m, day] = d.split('-').map(Number);
+  const [h, mi, se] = t.split(':').map(Number);
+  return nowLocal(new Date(y, m - 1, day, h, mi, se + 1));
+}
+
+/**
+ * Journée en cours d'un employé : sa caisse encore ouverte (ancien fonctionnement, avec fond de caisse),
+ * sinon depuis sa dernière fin de journée, sinon depuis minuit.
+ */
+export function currentPeriod(userId) {
+  const open = q.get("SELECT * FROM cash_sessions WHERE status = 'open' AND user_id = ? ORDER BY id LIMIT 1", userId);
+  if (open) return { session: open, from: open.opened_at, opening_float: round2(open.opening_float) };
+  const last = q.get("SELECT closed_at FROM cash_sessions WHERE status = 'closed' AND user_id = ? ORDER BY closed_at DESC, id DESC LIMIT 1", userId);
+  return { session: null, from: last?.closed_at ? nextSecond(last.closed_at) : `${todayLocal()} 00:00:00`, opening_float: 0 };
+}
 
 function canSee(req, session) {
   return req.perms.has('cash.all') || session.user_id === req.user.id;
@@ -156,6 +194,82 @@ r.post('/cash/sessions/:id/close', requirePerm('cash.own', 'cash.all'), (req, re
       note,
       id,
     );
+    return q.get(`${SESSION_SELECT} WHERE c.id = ?`, id);
+  });
+  result.breakdown = JSON.parse(result.breakdown);
+  broadcast('cash');
+  res.json(result);
+});
+
+// ---- Journée du caissier : totaux depuis la dernière fin de journée, puis « Terminer la journée » ----------
+const lastClosed = (userId) => {
+  const s = q.get(`${SESSION_SELECT} WHERE c.status = 'closed' AND c.user_id = ? ORDER BY c.closed_at DESC, c.id DESC LIMIT 1`, userId);
+  if (s) {
+    try {
+      s.breakdown = JSON.parse(s.breakdown || 'null');
+    } catch {
+      s.breakdown = null;
+    }
+  }
+  return s || null;
+};
+
+r.get('/cash/current', requirePerm('cash.own'), (req, res) => {
+  const p = currentPeriod(req.user.id);
+  res.json({
+    from: p.from,
+    opening_float: p.opening_float,
+    breakdown: cashBreakdown({ user_id: req.user.id, opened_at: p.from, opening_float: p.opening_float }),
+    last_closed: lastClosed(req.user.id),
+  });
+});
+
+/** Termine la journée : enregistre les totaux (et les espèces comptées, facultatives), puis tout repart de zéro. */
+r.post('/cash/current/close', requirePerm('cash.own'), (req, res) => {
+  const raw = req.body?.counted;
+  const counted = raw === undefined || raw === null || String(raw).trim() === '' ? null : round2(num(raw, NaN));
+  if (counted !== null && !(counted >= 0)) bad('Montant compté invalide.');
+  const note = str(req.body?.note, 300);
+  const result = tx(() => {
+    const p = currentPeriod(req.user.id);
+    const now = nowLocal();
+    if (p.from > now) bad('La journée vient d’être terminée.');
+    const breakdown = cashBreakdown({ user_id: req.user.id, opened_at: p.from, opening_float: p.opening_float }, now);
+    // Journée vide (double appui, ou rien depuis la dernière fin de journée) : rien à enregistrer
+    const empty = !breakdown.count && !breakdown.expense_items.length && !breakdown.payments && !breakdown.refunds && !breakdown.suppliers;
+    if (!p.session && empty) bad('Rien à terminer : aucune vente ni dépense depuis la dernière fin de journée.');
+    const difference = counted === null ? null : round2(counted - breakdown.expected);
+    let id;
+    if (p.session) {
+      q.run(
+        `UPDATE cash_sessions SET status = 'closed', closed_by = ?, closed_at = ?, expected = ?, counted = ?, difference = ?,
+                breakdown = ?, note = ? WHERE id = ?`,
+        req.user.id,
+        now,
+        breakdown.expected,
+        counted,
+        difference,
+        JSON.stringify(breakdown),
+        [p.session.note, note].filter(Boolean).join(' — ') || null,
+        p.session.id,
+      );
+      id = p.session.id;
+    } else {
+      id = q.run(
+        `INSERT INTO cash_sessions (user_id, status, opening_float, opened_by, opened_at, closed_by, closed_at, expected, counted, difference, breakdown, note)
+         VALUES (?, 'closed', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        req.user.id,
+        req.user.id,
+        p.from,
+        req.user.id,
+        now,
+        breakdown.expected,
+        counted,
+        difference,
+        JSON.stringify(breakdown),
+        note,
+      ).id;
+    }
     return q.get(`${SESSION_SELECT} WHERE c.id = ?`, id);
   });
   result.breakdown = JSON.parse(result.breakdown);

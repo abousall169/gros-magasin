@@ -1,4 +1,4 @@
-// Catalogue : prix de détail / prix de gros, contenance des colis, stock, import Excel.
+// Catalogue : prix de détail / demi-gros / gros, contenance des colis, stock, import Excel.
 import { ref, computed, watch, onMounted } from '../vue.js';
 import { api } from '../api.js';
 import { store, can, toast, toastError, ask, loadProducts } from '../store.js';
@@ -10,8 +10,11 @@ import {
   parseNum,
   norm,
   hasPack,
+  hasSemiPack,
   listPrice,
+  unitLabel,
   sellsWholesale,
+  sellsSemi,
   stockText,
   stockLevel,
   dateTimeFr,
@@ -43,6 +46,11 @@ const blank = () => ({
   pack_unit: 'carton',
   pack_size: '',
   wholesale_price: '',
+  has_semi: false,
+  semi_pack: false,
+  semi_unit: 'paquet',
+  semi_size: '',
+  semi_price: '',
   cost_price: '',
   min_stock: 0,
   stock: 0,
@@ -83,6 +91,11 @@ const ProductEditor = {
           pack_unit: p.pack_unit || 'carton',
           pack_size: hasPack(p) ? p.pack_size : '',
           wholesale_price: p.wholesale_price || '',
+          has_semi: sellsSemi(p),
+          semi_pack: hasSemiPack(p),
+          semi_unit: p.semi_unit || 'paquet',
+          semi_size: hasSemiPack(p) ? p.semi_size : '',
+          semi_price: p.semi_price || '',
           cost_price: p.cost_price ?? '',
           active: !!p.active,
         };
@@ -145,6 +158,9 @@ const ProductEditor = {
       pack_size: f.value.has_pack ? n(f.value.pack_size) : 1,
       retail_price: n(f.value.retail_price),
       wholesale_price: n(f.value.wholesale_price),
+      semi_unit: f.value.has_semi && f.value.semi_pack ? f.value.semi_unit : null,
+      semi_size: f.value.has_semi && f.value.semi_pack ? n(f.value.semi_size) : 1,
+      semi_price: f.value.has_semi ? n(f.value.semi_price) : 0,
       cost_price: n(f.value.cost_price),
       stock: n(f.value.stock),
       min_stock: n(f.value.min_stock),
@@ -163,6 +179,18 @@ const ProductEditor = {
         if (p.cost_price > 0 && perUnit < p.cost_price) out.wholesaleLoss = 'Attention : le prix de gros est inférieur au prix d’achat.';
       } else if (hasPack(p) && p.retail_price > 0) {
         out.wholesalePerUnit = `Sans prix de gros, le ${p.pack_unit} sera vendu ${money(p.retail_price * size)}.`;
+      }
+      // Demi-gros : prix ramené à l'unité de base, comparé au détail
+      if (p.semi_price > 0) {
+        const semiSize = hasSemiPack(p) ? p.semi_size : 1;
+        const perUnit = p.semi_price / semiSize;
+        out.semiPerUnit = hasSemiPack(p) ? `Soit ${money(perUnit)} par ${p.unit}` : '';
+        if (p.retail_price > 0) {
+          const diff = ((perUnit - p.retail_price) / p.retail_price) * 100;
+          const cmp = diff < 0 ? `${percent(-diff)} moins cher qu'au détail` : diff > 0 ? 'plus cher qu’au détail !' : 'même prix qu’au détail';
+          out.semiPerUnit = out.semiPerUnit ? `${out.semiPerUnit} (${cmp})` : cmp.charAt(0).toUpperCase() + cmp.slice(1);
+        }
+        if (p.cost_price > 0 && perUnit < p.cost_price) out.semiLoss = 'Attention : le prix demi-gros est inférieur au prix d’achat.';
       }
       if (p.cost_price > 0) {
         if (hasPack(p)) out.cost = `Soit ${money(p.cost_price * size)} le ${p.pack_unit}`;
@@ -191,6 +219,8 @@ const ProductEditor = {
     const save = async () => {
       const v = f.value;
       if (v.has_pack && !(n(v.pack_size) > 1)) return toast(`Indiquez combien de ${plural(v.unit, 2)} contient un ${v.pack_unit}.`, 'error');
+      if (v.has_semi && !(n(v.semi_price) > 0)) return toast('Indiquez le prix demi-gros.', 'error');
+      if (v.has_semi && v.semi_pack && !(n(v.semi_size) > 1)) return toast(`Indiquez combien de ${plural(v.unit, 2)} contient un ${v.semi_unit} (demi-gros).`, 'error');
       const body = {
         name: v.name,
         name_ar: v.name_ar,
@@ -203,6 +233,9 @@ const ProductEditor = {
         pack_unit: v.has_pack ? v.pack_unit : null,
         pack_size: v.has_pack ? n(v.pack_size) : 1,
         wholesale_price: n(v.wholesale_price),
+        semi_unit: v.has_semi && v.semi_pack ? v.semi_unit : null,
+        semi_size: v.has_semi && v.semi_pack ? n(v.semi_size) : 1,
+        semi_price: v.has_semi ? n(v.semi_price) : 0,
         cost_price: n(v.cost_price),
         min_stock: n(v.min_stock),
         active: v.active,
@@ -278,6 +311,25 @@ const ProductEditor = {
             <div class="field"><label for="p-retail">Prix de détail (par {{ f.unit || 'unité' }})</label><div class="input-affix"><input id="p-retail" class="input num with-end" v-model="f.retail_price" inputmode="decimal" required style="padding-left:12px" /><span class="affix-end">{{ store.settings.currency }}</span></div>
               <span class="hint warn" v-if="hints.retailLoss">Le prix de détail est inférieur au prix d'achat.</span></div>
           </div>
+        </div>
+
+        <div class="form-section">
+          <h3><span class="badge semi">Demi-gros</span> Vente en demi-gros</h3>
+          <label class="check"><input type="checkbox" v-model="f.has_semi" /><span>Ce produit se vend aussi en demi-gros<small>Un prix entre le détail et le gros, pour les revendeurs ou les quantités moyennes.</small></span></label>
+          <template v-if="f.has_semi">
+            <label class="check"><input type="checkbox" v-model="f.semi_pack" /><span>Le demi-gros se vend par paquet (pack, demi-carton…)<small>Sinon, le prix demi-gros est un prix par {{ f.unit || 'unité' }}.</small></span></label>
+            <div class="form-grid">
+              <template v-if="f.semi_pack">
+                <div class="field"><label for="p-semi-unit">Unité de demi-gros</label><input id="p-semi-unit" class="input" v-model="f.semi_unit" list="semi-packs" maxlength="20" /><datalist id="semi-packs"><option v-for="u in ['paquet', 'pack', 'demi-carton', 'demi-sac', 'douzaine', 'plaquette', 'lot']" :key="u" :value="u"></option></datalist></div>
+                <div class="field"><label for="p-semi-size">Nombre de {{ plural(f.unit || 'unité', 2) }} dans 1 {{ f.semi_unit || 'paquet' }}</label><input id="p-semi-size" class="input num" v-model="f.semi_size" inputmode="decimal" placeholder="Ex. : 6" /></div>
+              </template>
+              <div class="field" :class="{ 'span-2': !f.semi_pack }"><label for="p-semi">Prix demi-gros (par {{ f.semi_pack ? (f.semi_unit || 'paquet') : (f.unit || 'unité') }})</label>
+                <div class="input-affix"><input id="p-semi" class="input num with-end" v-model="f.semi_price" inputmode="decimal" style="padding-left:12px" /><span class="affix-end">{{ store.settings.currency }}</span></div>
+                <span class="hint" v-if="hints.semiPerUnit">{{ hints.semiPerUnit }}</span>
+                <span class="hint warn" v-if="hints.semiLoss">{{ hints.semiLoss }}</span>
+              </div>
+            </div>
+          </template>
         </div>
 
         <div class="form-section">
@@ -519,7 +571,8 @@ export default {
     const close = () => setQuery({ produit: undefined });
     const margin = (p) => (p.retail_price > 0 && p.cost_price > 0 ? ((p.retail_price - p.cost_price) / p.retail_price) * 100 : null);
     const isPhone = useMedia('(max-width: 760px)');
-    return { store, q, category, filter, rows, counts, editId, open, close, showImport, showCats, showLabels, isPhone, can, money, plural, percent, margin, hasPack, listPrice, sellsWholesale, stockText, stockLevel, exportUrl: api.url('/export/products.csv') };
+    const anySemi = computed(() => store.products.some(sellsSemi));
+    return { store, q, category, filter, rows, counts, editId, open, close, showImport, showCats, showLabels, isPhone, can, money, plural, percent, margin, hasPack, listPrice, unitLabel, sellsWholesale, sellsSemi, anySemi, stockText, stockLevel, exportUrl: api.url('/export/products.csv') };
   },
   template: `
     <div class="page">
@@ -556,6 +609,7 @@ export default {
           </div>
           <div class="end">
             <div class="price-line retail" style="justify-content:flex-end"><i class="k"></i><b>{{ money(p.retail_price, { bare: true }) }}</b>/ {{ p.unit }}</div>
+            <div v-if="sellsSemi(p)" class="price-line semi" style="justify-content:flex-end"><i class="k"></i><b>{{ money(listPrice(p, 'semi'), { bare: true }) }}</b>/ {{ unitLabel(p, 'semi') }}</div>
             <div v-if="sellsWholesale(p)" class="price-line wholesale" style="justify-content:flex-end"><i class="k"></i><b>{{ money(listPrice(p, 'wholesale'), { bare: true }) }}</b>/ {{ hasPack(p) ? p.pack_unit : p.unit }}</div>
           </div>
         </button>
@@ -563,7 +617,7 @@ export default {
       <div v-else-if="rows.length" class="table-wrap">
         <table class="table">
           <thead><tr>
-            <th>Produit</th><th class="hide-phone">Rayon</th><th class="num">Prix détail</th><th class="num">Prix gros</th><th class="num">Stock</th>
+            <th>Produit</th><th class="hide-phone">Rayon</th><th class="num">Prix détail</th><th class="num" v-if="anySemi">Prix demi-gros</th><th class="num">Prix gros</th><th class="num">Stock</th>
             <th class="num hide-phone" v-if="can('cost.view')">Achat</th><th class="num hide-phone" v-if="can('cost.view')">Bénéfice détail</th>
           </tr></thead>
           <tbody>
@@ -571,6 +625,7 @@ export default {
               <td><div class="cell-title">{{ p.name }}<span v-if="p.image_count" class="photo-count" :title="p.image_count + ' photo(s) de référence'"><Icon name="camera" size="sm" />{{ p.image_count }}</span></div><div class="cell-sub">{{ p.barcode || '' }}<template v-if="hasPack(p)">{{ p.barcode ? ' · ' : '' }}1 {{ p.pack_unit }} = {{ p.pack_size }} {{ plural(p.unit, p.pack_size) }}</template><template v-if="p.expiry_date"> · périme le {{ p.expiry_date.split('-').reverse().join('/') }}</template></div></td>
               <td class="hide-phone">{{ p.category_name || '—' }}</td>
               <td class="num">{{ money(p.retail_price, { bare: true }) }}<div class="cell-sub">/ {{ p.unit }}</div></td>
+              <td class="num" v-if="anySemi"><template v-if="sellsSemi(p)">{{ money(listPrice(p, 'semi'), { bare: true }) }}<div class="cell-sub">/ {{ unitLabel(p, 'semi') }}</div></template><span v-else class="faint">—</span></td>
               <td class="num"><template v-if="sellsWholesale(p)">{{ money(listPrice(p, 'wholesale'), { bare: true }) }}<div class="cell-sub">/ {{ hasPack(p) ? p.pack_unit : p.unit }}</div></template><span v-else class="faint">—</span></td>
               <td class="num"><span :class="{ badge: stockLevel(p) !== 'ok', danger: stockLevel(p) === 'low', 'solid-danger': stockLevel(p) === 'out' }">{{ stockLevel(p) === 'out' ? 'Rupture' : stockText(p) }}</span></td>
               <td class="num hide-phone" v-if="can('cost.view')">{{ money(p.cost_price, { bare: true }) }}</td>

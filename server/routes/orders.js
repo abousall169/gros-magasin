@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { q, tx } from '../db.js';
 import { requirePerm } from '../auth.js';
-import { BALANCE_SQL, listPriceFor, moneyRound } from '../services.js';
+import { BALANCE_SQL, listPriceFor, moneyRound, saleTypeOf } from '../services.js';
 import { bad, notFound, forbidden, str, num, int, round3, sum, fmtQty, nowLocal } from '../util.js';
 import { broadcast } from '../events.js';
 
@@ -42,7 +42,7 @@ r.post('/orders', requirePerm('orders.send'), (req, res) => {
       const p = q.get('SELECT * FROM products WHERE id = ?', int(it?.product_id));
       if (!p) bad('Un produit du panier est introuvable. Actualisez la page.');
       if (!p.active) bad(`Le produit « ${p.name} » n'est plus en vente.`);
-      const saleType = it.sale_type === 'wholesale' ? 'wholesale' : 'retail';
+      const saleType = saleTypeOf(it.sale_type);
       const qty = round3(num(it.qty));
       if (!(qty > 0) || qty > 1e7) bad(`Quantité invalide pour « ${p.name} ».`);
       const listPrice = listPriceFor(p, saleType);

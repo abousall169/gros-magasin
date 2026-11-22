@@ -1,13 +1,13 @@
 // Caisse du caissier : liste des ventes envoyées par les vendeurs. Il en choisit une et l'encaisse,
 // sans pouvoir la modifier (articles, prix et client restent ceux du vendeur).
-// Il gère aussi son tiroir : ouverture (fond de caisse), sorties d'argent, clôture imprimée en fin de journée.
+// Le total de sa caisse et « Terminer la journée » sont dans le menu (main.js) ; ses dépenses, dans la page « Dépenses ».
 import { ref, computed, onMounted, onUnmounted } from '../vue.js';
 import { api, enqueueSale, readQueue, requestQueuedPrint, sessionToken } from '../api.js';
-import { store, can, toast, toastError, ask, onChange, onSynced, CASH } from '../store.js';
+import { store, can, toast, onChange, onSynced, CASH } from '../store.js';
 import { t, pname, payLabel } from '../i18n.js';
-import { money, qty as fmtQty, plural, parseNum, roundMoney, decimals, listPrice, unitLabel, timeFr, dateTimeFr, saleNo, MODE_LABEL } from '../format.js';
+import { money, qty as fmtQty, plural, parseNum, roundMoney, decimals, listPrice, unitLabel, timeFr, saleNo, MODE_LABEL, TYPE_LABEL, modeClass } from '../format.js';
 import { Icon, Sheet, Empty, Skeleton } from '../components/ui.js';
-import { printTicket, printInvoice, printSession, printCashReport, saleText, openWhatsApp, openSms } from '../print.js';
+import { printTicket, printInvoice, saleText, openWhatsApp, openSms } from '../print.js';
 
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const pad = (n) => String(n).padStart(2, '0');
@@ -172,7 +172,6 @@ export default {
         pay.value = null;
         done.value = sale;
         load();
-        loadSession();
         if (store.settings.auto_print && store.settings.printer) printTicket(sale);
       } catch (e) {
         if (e.status === 0) {
@@ -199,114 +198,8 @@ export default {
     const share = (s) => openWhatsApp(saleText(s), s.customer_phone);
     const sms = (s) => openSms(saleText(s), s.customer_phone);
 
-    // ---- Ma caisse : ouverture (fond de caisse), sorties d'argent, clôture ----
-    const session = ref(undefined); // undefined : pas encore chargé ; null : caisse pas ouverte
-    const lastClosed = ref(null);
-    const till = ref(null); // feuille « Ma caisse » : { float, counted, note, busy }
-    const closedNow = ref(null); // clôture qui vient d'être faite
-    const expense = ref(null); // feuille « Sortie d'argent »
-    const categories = ref([]);
-    const loadSession = async () => {
-      try {
-        const r = await api.get('/cash/sessions');
-        session.value = r.open.find((x) => x.user_id === store.me.id) || null;
-        lastClosed.value = r.history.find((x) => x.user_id === store.me.id) || null;
-      } catch {
-        /* hors ligne : on garde l'état connu */
-      }
-    };
-    const b = computed(() => session.value?.breakdown || null);
-    const gap = computed(() => (!till.value || till.value.counted === '' || !b.value ? null : roundMoney((parseNum(till.value.counted) || 0) - b.value.expected)));
-    const openTill = () => {
-      till.value = { float: '', counted: '', note: '', busy: false };
-      loadSession();
-    };
-    const startTill = async () => {
-      const f = till.value;
-      const float = f.float === '' ? 0 : parseNum(f.float);
-      if (!(float >= 0)) return toast(t('Fond de caisse invalide.'), 'error');
-      f.busy = true;
-      try {
-        await api.post('/cash/sessions', { opening_float: float });
-        till.value = null;
-        toast(t('Caisse ouverte.'), 'success');
-        await loadSession();
-      } catch (e) {
-        toastError(e);
-        f.busy = false;
-      }
-    };
-    const closeTill = async () => {
-      const f = till.value;
-      const counted = parseNum(f.counted);
-      if (f.counted === '' || !(counted >= 0)) return toast(t('Indiquez les espèces comptées.'), 'error');
-      const sure = await ask({
-        title: t('Fermer la caisse ?'),
-        message: t('Espèces comptées : {a}. Une fois fermée, la caisse ne peut plus être modifiée.', { a: money(counted) }),
-        confirm: t('Fermer la caisse'),
-        danger: true,
-      });
-      if (!sure) return;
-      f.busy = true;
-      try {
-        const s = await api.post(`/cash/sessions/${session.value.id}/close`, { counted, note: f.note });
-        till.value = null;
-        session.value = null;
-        lastClosed.value = s;
-        closedNow.value = s;
-        printSession(s);
-      } catch (e) {
-        toastError(e);
-        f.busy = false;
-      }
-    };
-    const printDay = async () => {
-      try {
-        printCashReport(await api.get('/reports/cash'));
-      } catch (e) {
-        toastError(e);
-      }
-    };
-
-    const startExpense = async () => {
-      expense.value = { amount: '', category: '', method: CASH, note: '', busy: false };
-      if (!categories.value.length) {
-        try {
-          categories.value = await api.get('/expenses/categories');
-        } catch {
-          /* suggestions facultatives */
-        }
-      }
-    };
-    const saveExpense = async () => {
-      const f = expense.value;
-      const amount = parseNum(f.amount);
-      if (!(amount > 0)) return toast(t('Montant invalide.'), 'error');
-      if (!f.category.trim()) return toast(t('Choisissez le motif de la sortie d’argent.'), 'error');
-      f.busy = true;
-      try {
-        await api.post('/expenses', { amount, category: f.category.trim(), method: f.method, note: f.note });
-        expense.value = null;
-        toast(t('Sortie d’argent enregistrée.'), 'success');
-        loadSession();
-      } catch (e) {
-        toastError(e);
-        f.busy = false;
-      }
-    };
-    const removeExpense = async (e) => {
-      const sure = await ask({ title: t('Supprimer cette dépense ?'), message: `${e.category} — ${money(e.amount)}`, confirm: t('Supprimer'), danger: true });
-      if (!sure) return;
-      try {
-        await api.del(`/expenses/${e.id}`);
-        loadSession();
-      } catch (err) {
-        toastError(err);
-      }
-    };
 
     let off = null;
-    let offCash = null;
     let timer = null;
     // Vente hors ligne enfin enregistrée : impression demandée plus tôt
     const offSynced = onSynced((sale, entry) => {
@@ -314,51 +207,30 @@ export default {
     });
     onMounted(() => {
       load();
-      loadSession();
       off = onChange('orders', () => load(true));
-      offCash = onChange('cash', loadSession);
       // Filet de sécurité si la connexion en direct est coupée
       timer = setInterval(() => load(true), 20_000);
     });
     onUnmounted(() => {
       off?.();
-      offCash?.();
       offSynced?.();
       clearInterval(timer);
     });
 
     return {
       store, orders, pay, done, total, nums, quickCash, canCredit, open, addPayLine, fullCredit, confirm, next, printLater, share, sms, preview,
-      session, lastClosed, till, closedNow, expense, categories, b, gap, openTill, startTill, closeTill, printDay, startExpense, saveExpense, removeExpense,
-      printTicket, printInvoice, printSession, money, fmtQty, plural, timeFr, dateTimeFr, saleNo, payLabel, MODE_LABEL, CASH, can,
+      printTicket, printInvoice, money, fmtQty, plural, timeFr, saleNo, payLabel, MODE_LABEL, TYPE_LABEL, modeClass, CASH, can,
     };
   },
   template: `
     <div class="page">
       <div class="page-head keep-title">
         <h1>{{ t('Ventes à encaisser') }}<span v-if="orders && orders.length" class="count num">{{ orders.length }}</span></h1>
-        <div class="desk-actions">
-          <button type="button" class="btn" @click="startExpense"><Icon name="wallet" />{{ t('Sortie d’argent') }}</button>
-          <button type="button" class="btn" :class="{ primary: session === null }" :disabled="session === undefined" @click="openTill">
-            <Icon :name="session ? 'lock' : 'unlock'" />{{ session ? t('Fermer ma caisse') : t('Ouvrir ma caisse') }}
-          </button>
-        </div>
       </div>
-
-      <div v-if="session === null" class="alert till-alert">
-        <Icon name="lock" />
-        <span class="grow">{{ t('Votre caisse n’est pas ouverte. Ouvrez-la avec le fond de caisse pour pouvoir la fermer juste ce soir.') }}</span>
-        <button type="button" class="btn sm primary" @click="openTill">{{ t('Ouvrir ma caisse') }}</button>
-      </div>
-      <p v-else-if="session" class="till-strip small">
-        <i></i>{{ t('Caisse ouverte depuis {h}', { h: timeFr(session.opened_at) }) }}
-        · {{ t('fond de caisse') }} {{ money(session.breakdown.opening_float) }}
-        <template v-if="session.breakdown.expense_items.length"> · {{ t('{n} sortie(s) d’argent : {a}', { n: session.breakdown.expense_items.length, a: money(session.breakdown.expenses) }) }}</template>
-      </p>
 
       <Skeleton v-if="!orders" :rows="4" />
       <div v-else-if="orders.length" class="order-list">
-        <button v-for="o in orders" :key="o.id" type="button" class="order-row" :class="'mode-' + (o.mode === 'wholesale' ? 'wholesale' : 'retail')" @click="open(o)">
+        <button v-for="o in orders" :key="o.id" type="button" class="order-row" :class="modeClass(o.mode)" @click="open(o)">
           <span class="or-no"><b>{{ t('N° {n}', { n: o.id }) }}</b><small class="num">{{ timeFr(o.created_at) }}</small></span>
           <span class="or-main">
             <span class="or-who"><b>{{ o.seller_name }}</b> · {{ o.customer_name || t('Client comptoir') }} <span class="badge" :class="o.mode">{{ t(MODE_LABEL[o.mode]) }}</span></span>
@@ -372,7 +244,7 @@ export default {
     </div>
 
     <!-- Encaissement (la vente ne peut pas être modifiée) -->
-    <Sheet v-if="pay" :title="t('Encaissement') + ' · ' + t('N° {n}', { n: pay.order.id })" band full :cls="'mode-' + (pay.order.mode === 'wholesale' ? 'wholesale' : 'retail')" @close="pay = null">
+    <Sheet v-if="pay" :title="t('Encaissement') + ' · ' + t('N° {n}', { n: pay.order.id })" band full :cls="modeClass(pay.order.mode)" @close="pay = null">
       <template #head><strong class="num" style="font-size: 1.4375rem">{{ money(total) }}</strong></template>
       <div class="stack loose">
         <div v-if="!store.online" class="alert"><Icon name="wifi" /><span>{{ t('Hors ligne : la vente sera gardée sur cet appareil et envoyée au retour du réseau.') }}</span></div>
@@ -382,7 +254,7 @@ export default {
         </div>
         <div class="list" style="border:1px solid var(--line)">
           <div v-for="(l, i) in pay.lines" :key="i" class="list-row">
-            <div class="main-col"><div class="title">{{ l.name }}</div><div class="sub">{{ fmtQty(l.qty) }} {{ plural(l.unit, l.qty) }} × {{ money(l.price, { bare: true }) }} · {{ l.sale_type === 'wholesale' ? t('Gros') : t('Détail') }}</div></div>
+            <div class="main-col"><div class="title">{{ l.name }}</div><div class="sub">{{ fmtQty(l.qty) }} {{ plural(l.unit, l.qty) }} × {{ money(l.price, { bare: true }) }} · {{ t(TYPE_LABEL[l.sale_type] || 'Détail') }}</div></div>
             <span class="num strong">{{ money(l.total, { bare: true }) }}</span>
           </div>
         </div>
@@ -448,113 +320,5 @@ export default {
         <button type="button" class="btn primary lg block" @click="next" autofocus>{{ t('Vente suivante') }}</button>
       </template>
     </Sheet>
-
-    <!-- Ma caisse : ouverture le matin, clôture le soir -->
-    <Sheet v-if="till" :title="session ? t('Fermer ma caisse') : t('Ouvrir ma caisse')" @close="till = null">
-      <form v-if="!session" id="till-open" class="stack loose" @submit.prevent="startTill">
-        <p class="small muted">{{ t('Au début de la journée, comptez l’argent déjà dans le tiroir (fond de caisse). À la clôture, le logiciel calcule les espèces attendues et l’écart.') }}</p>
-        <div class="field"><label for="till-float">{{ t('Fond de caisse') }}</label><input id="till-float" class="input num" v-model="till.float" inputmode="decimal" placeholder="0" autofocus style="font-size:1.25rem;font-weight:700" /></div>
-        <div v-if="lastClosed" class="row wrap small muted">
-          <span class="grow">{{ t('Dernière clôture : {d}', { d: dateTimeFr(lastClosed.closed_at) }) }}</span>
-          <button type="button" class="btn sm" @click="printSession(lastClosed)"><Icon name="printer" size="sm" />{{ t('Réimprimer') }}</button>
-        </div>
-      </form>
-      <div v-else-if="b" class="stack loose">
-        <p class="small muted">{{ t('Caisse ouverte le {d}', { d: dateTimeFr(session.opened_at) }) }}</p>
-        <div v-if="store.pending" class="alert danger"><Icon name="wifi" /><span>{{ t('{n} vente(s) encore gardée(s) sur cet appareil : attendez le retour du réseau avant de fermer la caisse.', { n: store.pending }) }}</span></div>
-        <div v-if="orders && orders.length" class="alert"><Icon name="alert" /><span>{{ t('Il reste {n} vente(s) à encaisser.', { n: orders.length }) }}</span></div>
-
-        <div class="kv">
-          <div><span>{{ t('Fond de caisse') }}</span><span>{{ money(b.opening_float) }}</span></div>
-          <div><span>+ {{ t('Ventes en espèces') }}</span><span>{{ money(b.sales) }}</span></div>
-          <div v-if="b.payments"><span>+ {{ t('Versements des clients') }}</span><span>{{ money(b.payments) }}</span></div>
-          <div v-if="b.refunds"><span>− {{ t('Retours remboursés') }}</span><span>{{ money(b.refunds) }}</span></div>
-          <div><span>− {{ t('Sorties d’argent') }}</span><span>{{ money(b.expenses) }}</span></div>
-          <div v-if="b.suppliers"><span>− {{ t('Paiements fournisseurs') }}</span><span>{{ money(b.suppliers) }}</span></div>
-        </div>
-        <div class="pay-summary"><div class="sum-row big"><span>{{ t('Espèces attendues dans le tiroir') }}</span><span>{{ money(b.expected) }}</span></div></div>
-
-        <section>
-          <div class="till-h"><h3>{{ t('Ventes encaissées') }} ({{ b.count }})</h3><span class="num strong">{{ money(b.sales_total) }}</span></div>
-          <div v-if="b.credit > 0" class="kv"><div><span>{{ t('dont à crédit') }}</span><span>{{ money(b.credit) }}</span></div></div>
-          <template v-if="b.methods.length">
-            <div class="kv"><div v-for="m in b.methods" :key="m.method"><span>{{ payLabel(m.method) }}</span><span>{{ money(m.amount) }}</span></div></div>
-            <p class="xsmall faint" style="margin-top:4px">{{ t('Hors espèces : à vérifier sur le téléphone ou le relevé, pas dans le tiroir.') }}</p>
-          </template>
-        </section>
-
-        <section>
-          <div class="till-h">
-            <h3>{{ t('Sorties d’argent') }}</h3>
-            <button type="button" class="btn sm" @click="startExpense"><Icon name="plus" size="sm" />{{ t('Ajouter') }}</button>
-          </div>
-          <div v-if="b.expense_items.length" class="list" style="border:1px solid var(--line)">
-            <div v-for="e in b.expense_items" :key="e.id" class="list-row">
-              <div class="main-col"><div class="title">{{ e.category }}<span v-if="e.note" class="faint"> · {{ e.note }}</span></div><div class="sub">{{ timeFr(e.created_at) }} · {{ payLabel(e.method) }}</div></div>
-              <span class="num strong">{{ money(e.amount, { bare: true }) }}</span>
-              <button type="button" class="icon-btn sm" @click="removeExpense(e)" :aria-label="t('Supprimer')" :title="t('Supprimer')"><Icon name="trash" size="sm" /></button>
-            </div>
-          </div>
-          <p v-else class="small muted">{{ t('Aucune sortie d’argent.') }}</p>
-        </section>
-
-        <div class="field"><label for="till-count">{{ t('Espèces comptées') }}</label><input id="till-count" class="input num" v-model="till.counted" inputmode="decimal" :placeholder="t('Comptez les billets et pièces')" style="font-size:1.25rem;font-weight:700" /></div>
-        <div v-if="gap !== null" class="alert" :class="gap === 0 ? 'ok' : 'danger'">
-          <Icon :name="gap === 0 ? 'check' : 'alert'" />
-          <span v-if="gap === 0"><b>{{ t('La caisse est juste.') }}</b></span>
-          <span v-else-if="gap < 0"><b>{{ t('Il manque {a} dans la caisse.', { a: money(-gap) }) }}</b></span>
-          <span v-else><b>{{ t('Il y a {a} en trop dans la caisse.', { a: money(gap) }) }}</b></span>
-        </div>
-        <div class="field"><label for="till-note">{{ t('Remarque') }}</label><input id="till-note" class="input" v-model="till.note" maxlength="300" :placeholder="t('Facultatif')" /></div>
-      </div>
-      <template #foot>
-        <button type="button" class="btn" @click="till = null">{{ t('Retour') }}</button>
-        <button v-if="!session" type="submit" form="till-open" class="btn primary" :class="{ loading: till.busy }" :disabled="till.busy"><Icon name="unlock" />{{ t('Ouvrir la caisse') }}</button>
-        <button v-else type="button" class="btn danger solid" :class="{ loading: till.busy }" :disabled="till.busy || till.counted === ''" @click="closeTill"><Icon name="lock" />{{ t('Fermer la caisse et imprimer') }}</button>
-      </template>
-    </Sheet>
-
-    <!-- Caisse fermée -->
-    <Sheet v-if="closedNow" :title="t('Caisse fermée')" size="narrow" @close="closedNow = null">
-      <div class="done">
-        <div class="tick" :class="{ offline: Math.abs(closedNow.difference) >= 0.005 }"><Icon :name="Math.abs(closedNow.difference) < 0.005 ? 'check' : 'alert'" /></div>
-        <h2 v-if="Math.abs(closedNow.difference) < 0.005">{{ t('La caisse est juste.') }}</h2>
-        <h2 v-else-if="closedNow.difference < 0">{{ t('Il manque {a} dans la caisse.', { a: money(-closedNow.difference) }) }}</h2>
-        <h2 v-else>{{ t('Il y a {a} en trop dans la caisse.', { a: money(closedNow.difference) }) }}</h2>
-        <div class="kv" style="text-align:start">
-          <div><span>{{ t('Espèces attendues') }}</span><span>{{ money(closedNow.expected) }}</span></div>
-          <div><span>{{ t('Espèces comptées') }}</span><span>{{ money(closedNow.counted) }}</span></div>
-          <div><span>{{ t('Sorties d’argent') }}</span><span>{{ money(closedNow.breakdown.expenses) }}</span></div>
-        </div>
-      </div>
-      <div class="done-actions">
-        <button type="button" class="btn" @click="printSession(closedNow)"><Icon name="printer" />{{ t('Réimprimer la clôture') }}</button>
-        <button type="button" class="btn" @click="printDay"><Icon name="file" />{{ t('Résumé de la journée') }}</button>
-      </div>
-      <template #foot>
-        <button type="button" class="btn primary lg block" @click="closedNow = null" autofocus>{{ t('Terminé') }}</button>
-      </template>
-    </Sheet>
-
-    <!-- Sortie d'argent (dépense payée depuis la caisse) -->
-    <Sheet v-if="expense" :title="t('Sortie d’argent')" size="narrow" @close="expense = null">
-      <form id="cd-exp" class="stack" @submit.prevent="saveExpense">
-        <div class="field"><label for="cd-ex-amount">{{ t('Montant') }}</label><input id="cd-ex-amount" class="input num" v-model="expense.amount" inputmode="decimal" autofocus style="font-size:1.25rem;font-weight:700" /></div>
-        <div class="field"><span class="label">{{ t('Motif') }}</span>
-          <div class="chips wrap" v-if="categories.length">
-            <button v-for="c in categories" :key="c" type="button" class="chip" :class="{ on: expense.category === c }" @click="expense.category = c">{{ c }}</button>
-          </div>
-          <input class="input" v-model="expense.category" maxlength="60" :placeholder="t('Autre motif…')" :aria-label="t('Motif')" />
-        </div>
-        <div class="field"><label for="cd-ex-note">{{ t('Détail') }}</label><input id="cd-ex-note" class="input" v-model="expense.note" maxlength="300" :placeholder="t('Ex. : taxi livraison Boutique Awa')" /></div>
-        <div class="field"><span class="label">{{ t('Payé par') }}</span>
-          <div class="methods"><button v-for="m in store.paymentMethods" :key="m" type="button" class="method" :class="{ on: expense.method === m }" @click="expense.method = m">{{ payLabel(m) }}</button></div>
-          <span class="hint">{{ t('« Espèces » = argent pris dans la caisse : il sera déduit de la caisse du jour.') }}</span>
-        </div>
-      </form>
-      <template #foot>
-        <button type="button" class="btn" @click="expense = null">{{ t('Annuler') }}</button>
-        <button type="submit" form="cd-exp" class="btn primary" :class="{ loading: expense.busy }" :disabled="expense.busy">{{ t('Enregistrer') }}</button>
-      </template>
-    </Sheet>`,
+`,
 };

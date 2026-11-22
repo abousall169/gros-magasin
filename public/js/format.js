@@ -68,14 +68,23 @@ export function parseNum(v) {
 // Produits : gros / détail
 // ---------------------------------------------------------------------------
 export const hasPack = (p) => !!p?.pack_unit && Number(p.pack_size) > 1;
-export const unitsPer = (p, type) => (type === 'wholesale' && hasPack(p) ? Number(p.pack_size) : 1);
-export const unitLabel = (p, type) => (type === 'wholesale' && hasPack(p) ? p.pack_unit : p.unit);
+/** Demi-gros par unité intermédiaire (paquet, demi-carton…) ; sinon c'est un prix par unité de base. */
+export const hasSemiPack = (p) => !!p?.semi_unit && Number(p.semi_size) > 1;
+export const unitsPer = (p, type) =>
+  type === 'wholesale' && hasPack(p) ? Number(p.pack_size) : type === 'semi' && hasSemiPack(p) ? Number(p.semi_size) : 1;
+export const unitLabel = (p, type) =>
+  type === 'wholesale' && hasPack(p) ? p.pack_unit : type === 'semi' && hasSemiPack(p) ? p.semi_unit : p.unit;
 
 /** Le produit a-t-il un vrai prix de gros (colis ou prix réduit) ? */
 export const sellsWholesale = (p) => hasPack(p) || Number(p?.wholesale_price) > 0;
+/** Le produit a-t-il un prix demi-gros ? */
+export const sellsSemi = (p) => Number(p?.semi_price) > 0;
+/** Types de vente proposés pour ce produit, du plus petit au plus grand. */
+export const saleTypes = (p) => ['retail', ...(sellsSemi(p) ? ['semi'] : []), ...(sellsWholesale(p) ? ['wholesale'] : [])];
 
 export function listPrice(p, type) {
   if (type === 'wholesale' && Number(p.wholesale_price) > 0) return Number(p.wholesale_price);
+  if (type === 'semi' && Number(p.semi_price) > 0) return Number(p.semi_price);
   return round2(Number(p.retail_price) * unitsPer(p, type));
 }
 
@@ -158,7 +167,11 @@ export function when(s) {
 
 export const saleNo = (id) => `N° ${String(id).padStart(6, '0')}`;
 
-export const MODE_LABEL = { retail: 'Détail', wholesale: 'Gros', mixed: 'Gros + détail' };
+export const MODE_LABEL = { retail: 'Détail', semi: 'Demi-gros', wholesale: 'Gros', mixed: 'Gros + détail' };
+/** Libellé d'un type de vente (ligne de vente). */
+export const TYPE_LABEL = { retail: 'Détail', semi: 'Demi-gros', wholesale: 'Gros' };
+/** Classe de couleur d'un mode de vente (une vente mélangée prend la couleur du détail). */
+export const modeClass = (m) => `mode-${m === 'wholesale' || m === 'semi' ? m : 'retail'}`;
 
 // ---------------------------------------------------------------------------
 // Montant en lettres (factures)

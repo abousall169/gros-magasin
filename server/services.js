@@ -10,19 +10,29 @@ import { bad, notFound, nowLocal, num, int, str, round2, round3, round4, sum, fm
 /** Le produit se vend-il par colis (carton, sac, paquet...) ? */
 export const hasPack = (p) => !!p.pack_unit && Number(p.pack_size) > 1;
 
-/** Nombre d'unités de base dans une unité vendue selon le type de vente. */
-export const unitsPerFor = (p, saleType) => (saleType === 'wholesale' && hasPack(p) ? Number(p.pack_size) : 1);
+/** Demi-gros par unité intermédiaire (paquet, demi-carton…) ? Sinon le demi-gros est un prix par unité de base. */
+export const hasSemiPack = (p) => !!p.semi_unit && Number(p.semi_size) > 1;
 
-export const unitLabelFor = (p, saleType) => (saleType === 'wholesale' && hasPack(p) ? p.pack_unit : p.unit);
+/** Types de vente : détail, demi-gros, gros. Toute autre valeur est lue comme du détail. */
+export const saleTypeOf = (v) => (v === 'wholesale' || v === 'semi' ? v : 'retail');
+
+/** Nombre d'unités de base dans une unité vendue selon le type de vente. */
+export const unitsPerFor = (p, saleType) =>
+  saleType === 'wholesale' && hasPack(p) ? Number(p.pack_size) : saleType === 'semi' && hasSemiPack(p) ? Number(p.semi_size) : 1;
+
+export const unitLabelFor = (p, saleType) =>
+  saleType === 'wholesale' && hasPack(p) ? p.pack_unit : saleType === 'semi' && hasSemiPack(p) ? p.semi_unit : p.unit;
 
 /**
  * Prix catalogue d'une unité vendue.
  *  - Détail : prix de détail par unité de base.
+ *  - Demi-gros : prix demi-gros par unité intermédiaire (ou par unité de base sans unité intermédiaire).
  *  - Gros : prix de gros par colis (ou par unité si le produit n'a pas de colis).
- *    Sans prix de gros défini, on retombe sur le prix de détail.
+ *    Sans prix demi-gros ou de gros défini, on retombe sur le prix de détail.
  */
 export function listPriceFor(p, saleType) {
   if (saleType === 'wholesale' && Number(p.wholesale_price) > 0) return Number(p.wholesale_price);
+  if (saleType === 'semi' && Number(p.semi_price) > 0) return Number(p.semi_price);
   return round2(Number(p.retail_price) * unitsPerFor(p, saleType));
 }
 
@@ -239,7 +249,7 @@ export function createSale(user, perms, input, { at } = {}) {
       const p = q.get('SELECT * FROM products WHERE id = ?', int(it?.product_id));
       if (!p) bad('Un produit du panier est introuvable. Actualisez la page.');
       if (!p.active && !offline) bad(`Le produit « ${p.name} » n'est plus en vente.`);
-      const saleType = it.sale_type === 'wholesale' ? 'wholesale' : 'retail';
+      const saleType = saleTypeOf(it.sale_type);
       const qty = round3(num(it.qty));
       if (!(qty > 0) || qty > 1e7) bad(`Quantité invalide pour « ${p.name} ».`);
       const unitsPer = unitsPerFor(p, saleType);

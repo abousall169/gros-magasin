@@ -11,7 +11,7 @@ import { Icon, Sheet, Skeleton } from '../components/ui.js';
 const ROLE_HELP = {
   admin: 'Accès complet : prix, bénéfices, réglages, employés.',
   manager: 'Gère produits, stock, clients et rapports. Ne touche pas aux réglages ni aux employés.',
-  cashier: 'Ne voit que la liste des ventes envoyées par les vendeurs. Il en choisit une et l’encaisse, sans pouvoir la modifier. Il ne vend pas lui-même. Il ouvre et ferme sa caisse et note les sorties d’argent.',
+  cashier: 'Ne voit que la liste des ventes envoyées par les vendeurs. Il en choisit une et l’encaisse, sans pouvoir la modifier. Il ne vend pas lui-même. Il note ses dépenses et termine sa journée (ticket imprimé, totaux remis à zéro).',
   seller: 'Ne voit que la caisse. Prépare le panier du client et l’envoie à la caisse : il n’encaisse pas. Peut vendre plus cher que le prix fixé, jamais moins cher.',
 };
 

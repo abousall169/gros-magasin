@@ -1,11 +1,12 @@
 // Point d'entrée de l'interface : coquille (menu), connexion, pages, hors ligne.
 import { createApp, computed, ref, watch, onMounted, onUnmounted } from './vue.js';
-import { store, can, loadStatus, loadMe, loadProducts, connectEvents, logout, toastError, startSync, syncQueue } from './store.js';
-import { readQueue, readRejected, retryRejected, dropRejected } from './api.js';
+import { store, can, loadStatus, loadMe, loadProducts, connectEvents, logout, toastError, startSync, syncQueue, onChange } from './store.js';
+import { api, readQueue, readRejected, retryRejected, dropRejected } from './api.js';
 import { route, go } from './router.js';
 import { initials, money, dateTimeFr } from './format.js';
 import { t, LANGS, setLang, applyLang, initLang } from './i18n.js';
 import { Icon, Sheet, Toasts, DialogHost } from './components/ui.js';
+import { EndDaySheet } from './components/till.js';
 import Login from './pages/Login.js';
 import Pos from './pages/Pos.js';
 import CashDesk from './pages/CashDesk.js';
@@ -20,15 +21,19 @@ import Settings from './pages/Settings.js';
 
 const ROLE = { admin: 'Administrateur', manager: 'Gestionnaire', cashier: 'Caissier', seller: 'Vendeur' };
 
-// Caisse : le caissier (qui encaisse sans vendre) voit seulement la liste des ventes envoyées par les vendeurs ;
+// Caissier : il encaisse sans vendre (ni « sales.create » ni « orders.send »).
+const isDesk = () => can('orders.cash') && !can('sales.create') && !can('orders.send');
+
+// Caisse : le caissier voit seulement la liste des ventes envoyées par les vendeurs ;
 // le vendeur, le gérant et l'administrateur ont la caisse complète.
 const Till = {
   components: { Pos, CashDesk },
-  setup: () => ({ desk: computed(() => !can('sales.create') && !can('orders.send')) }),
+  setup: () => ({ desk: computed(isDesk) }),
   template: `<CashDesk v-if="desk" /><Pos v-else />`,
 };
 
-// Pages et droits nécessaires. Le vendeur / caissier ne voit que la caisse (sans le droit « menu.full »).
+// Pages et droits nécessaires. Le vendeur ne voit que la caisse (sans le droit « menu.full ») ;
+// le caissier a en plus sa page « desk » : ses dépenses (sa journée se termine en bas des ventes à encaisser).
 const PAGES = [
   { path: '/tableau-de-bord', label: 'Tableau de bord', short: 'Accueil', icon: 'home', perm: 'dashboard', comp: Dashboard },
   { path: '/caisse', label: 'Caisse', short: 'Caisse', icon: 'cart', perm: ['pos', 'orders.send'], comp: Till, bare: true },
@@ -39,6 +44,7 @@ const PAGES = [
   { path: '/depenses', label: 'Dépenses', short: 'Dépenses', icon: 'wallet', perm: 'expenses.add', comp: Expenses },
   { path: '/rapports', label: 'Rapports', short: 'Rapports', icon: 'chart', perm: 'reports.view', comp: Reports },
   { path: '/parametres', label: 'Paramètres', short: 'Réglages', icon: 'sliders', perm: null, comp: Settings },
+  { path: '/mes-depenses', label: 'Dépenses', short: 'Dépenses', icon: 'wallet', perm: 'expenses.add', comp: Expenses, desk: true },
 ];
 
 // Ventes hors ligne refusées par le serveur : elles restent sur l'appareil jusqu'à décision
@@ -79,21 +85,55 @@ const RejectedSales = {
 };
 
 const App = {
-  components: { Icon, Sheet, Toasts, DialogHost, Login, RejectedSales },
+  components: { Icon, Sheet, Toasts, DialogHost, Login, RejectedSales, EndDaySheet },
   setup() {
     const menuOpen = ref(false);
-    const pages = computed(() => PAGES.filter((p) => (!p.perm || [].concat(p.perm).some(can)) && (p.path === '/caisse' || can('menu.full'))));
+    const desk = computed(isDesk);
+    const pages = computed(() =>
+      PAGES.filter((p) => (!p.perm || [].concat(p.perm).some(can)) && (p.desk ? desk.value : p.path === '/caisse' || can('menu.full'))),
+    );
     const current = computed(() => pages.value.find((p) => route.path === p.path || route.path.startsWith(`${p.path}/`)));
     const homePath = computed(() => (can('dashboard') ? '/tableau-de-bord' : '/caisse'));
     const tabs = computed(() => {
-      const order = can('dashboard') ? ['/caisse', '/ventes', '/produits', '/clients'] : ['/caisse', '/ventes', '/clients', '/produits'];
+      const order = desk.value
+        ? ['/caisse', '/mes-depenses']
+        : can('dashboard')
+          ? ['/caisse', '/ventes', '/produits', '/clients']
+          : ['/caisse', '/ventes', '/clients', '/produits'];
       return order.map((p) => pages.value.find((x) => x.path === p)).filter(Boolean).slice(0, 4);
     });
     const account = () => !can('settings.manage');
-    const pageTitle = computed(() => (current.value?.path === '/parametres' && account() ? t('Mon compte') : t(current.value?.label || '')));
-    const navLabel = (p) => (p.path === '/parametres' && account() ? t('Mon compte') : t(p.label));
-    const navShort = (p) => (p.path === '/parametres' && account() ? t('Compte') : t(p.short));
+    // Libellés propres à certains rôles : « Mon compte » sans les réglages, « Ventes à encaisser » pour le caissier
+    const navLabel = (p) =>
+      p.path === '/parametres' && account() ? t('Mon compte') : p.path === '/caisse' && desk.value ? t('Ventes à encaisser') : t(p.label);
+    const navShort = (p) =>
+      p.path === '/parametres' && account() ? t('Compte') : p.path === '/caisse' && desk.value ? t('À encaisser') : t(p.short);
+    const pageTitle = computed(() => (current.value ? navLabel(current.value) : ''));
     const nextLang = computed(() => LANGS[(LANGS.findIndex((l) => l.id === store.lang) + 1) % LANGS.length]);
+
+    // Caissier : « Total caisse » (ventes − dépenses depuis la dernière fin de journée) dans le menu,
+    // et « Terminer la journée » en bas du menu. Mis à jour à chaque encaissement et à chaque dépense.
+    const day = ref(null);
+    const ending = ref(false);
+    const loadDay = async () => {
+      if (!store.me || !desk.value || !can('cash.own')) {
+        day.value = null;
+        return;
+      }
+      try {
+        day.value = await api.get('/cash/current');
+      } catch {
+        /* hors ligne : on garde le dernier total connu */
+      }
+    };
+    watch(() => [store.me?.id, desk.value], loadDay, { immediate: true });
+    const dayOffs = [];
+    onMounted(() => dayOffs.push(onChange('cash', loadDay), onChange('sales', loadDay), onChange('expenses', loadDay)));
+    onUnmounted(() => dayOffs.forEach((off) => off()));
+    const endDay = async () => {
+      await loadDay();
+      if (day.value) ending.value = true;
+    };
 
     // Redirection vers une page autorisée
     watch(
@@ -147,7 +187,7 @@ const App = {
       await logout();
     };
 
-    return { store, route, pages, current, tabs, menuOpen, pageTitle, navLabel, navShort, nextLang, onLogged, signOut, setLang, initials, ROLE, can };
+    return { store, route, pages, current, tabs, menuOpen, pageTitle, navLabel, navShort, nextLang, onLogged, signOut, setLang, initials, ROLE, can, day, ending, loadDay, endDay, money };
   },
   template: `
     <div v-if="!store.booted" class="boot">{{ t('Chargement…') }}</div>
@@ -155,12 +195,17 @@ const App = {
     <div v-else class="shell" :class="{ solo: pages.length === 1 }">
       <aside class="rail" :aria-label="t('Menu principal')">
         <div class="rail-brand"><img class="rail-logo" src="/icons/icon.svg" :alt="store.settings.store_name" /><strong>{{ store.settings.store_name }}</strong><span v-if="store.settings.demo_data" class="demo-tag">{{ t('Données de démonstration') }}</span><span v-else>{{ t('Caisse gros & détail') }}</span></div>
+        <div v-if="day" class="rail-total" :title="t('Total caisse') + ' : ' + money(day.breakdown.till_total)">
+          <small>{{ t('Total caisse') }}</small>
+          <strong class="num">{{ money(day.breakdown.till_total, { bare: true }) }}<span class="cur">{{ store.settings.currency }}</span></strong>
+        </div>
         <nav class="nav">
           <a v-for="p in pages" :key="p.path" :href="'#' + p.path" :class="{ active: current && current.path === p.path }" :aria-current="current && current.path === p.path ? 'page' : null">
             <Icon :name="p.icon" /><span class="lbl">{{ navLabel(p) }}</span><span class="lbl-short">{{ navShort(p) }}</span>
           </a>
         </nav>
         <div class="rail-foot">
+          <button v-if="day" type="button" class="btn-end-day" @click="endDay" :title="t('Terminer la journée')"><Icon name="lock" /><span class="lbl">{{ t('Terminer la journée') }}</span><span class="lbl-short">{{ t('Terminer') }}</span></button>
           <button v-if="store.pending || store.rejected.length" type="button" class="sync-pill" :class="{ bad: store.rejected.length }" @click="store.rejected.length ? (store.showRejected = true) : null">
             <Icon :name="store.rejected.length ? 'alert' : 'clock'" size="sm" />
             <span v-if="store.rejected.length">{{ t('{n} vente(s) à traiter', { n: store.rejected.length }) }}</span>
@@ -188,6 +233,10 @@ const App = {
           <button type="button" class="icon-btn" @click="signOut" :aria-label="t('Changer d’utilisateur')"><Icon name="swap" /></button>
         </header>
         <div v-if="!store.online" class="offline-banner" role="status"><Icon name="wifi" size="sm" />{{ store.pending ? t('Hors ligne : les ventes sont gardées sur cet appareil ({n} en attente) et partiront au retour du réseau.', { n: store.pending }) : t('Hors ligne : vous pouvez continuer à vendre. Les ventes partiront au retour du réseau.') }}</div>
+        <div v-if="day" class="phone-till">
+          <span class="grow">{{ t('Total caisse') }} <b class="num">{{ money(day.breakdown.till_total) }}</b></span>
+          <button type="button" class="btn sm danger" @click="endDay"><Icon name="lock" size="sm" />{{ t('Terminer la journée') }}</button>
+        </div>
         <component v-if="current" :is="current.comp" :key="current.path" />
       </div>
 
@@ -211,6 +260,7 @@ const App = {
         </div>
       </Sheet>
       <RejectedSales v-if="store.showRejected" />
+      <EndDaySheet v-if="ending && day" :day="day" @close="ending = false" @ended="loadDay" />
     </div>
     <Toasts />
     <DialogHost />`,

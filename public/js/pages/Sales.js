@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from '../vue.js';
 import { api } from '../api.js';
 import { store, can, onChange, toast, toastError, ask, CASH } from '../store.js';
 import { t, pname, payLabel } from '../i18n.js';
-import { money, qty, plural, parseNum, round3, when, dateTimeFr, saleNo, MODE_LABEL } from '../format.js';
+import { money, qty, plural, parseNum, round3, when, dateTimeFr, saleNo, MODE_LABEL, TYPE_LABEL } from '../format.js';
 import { route, setQuery } from '../router.js';
 import { Icon, Sheet, Empty, Skeleton, PeriodPicker, periodRange } from '../components/ui.js';
 import { printTicket, printInvoice, saleText, openWhatsApp, openSms } from '../print.js';
@@ -148,7 +148,7 @@ export const SaleDetail = {
     const canRefund = computed(() => sale.value && sale.value.status !== 'cancelled' && sale.value.items.some((it) => it.qty - it.returned_qty > 1e-9));
     const share = () => openWhatsApp(saleText(sale.value), sale.value.customer_phone);
     const sms = () => openSms(saleText(sale.value), sale.value.customer_phone);
-    return { store, sale, busy, refunding, canRefund, cancel, markReviewed, refunded, share, sms, printTicket, printInvoice, can, money, qty, plural, dateTimeFr, saleNo, MODE_LABEL, payLabel, reviewText };
+    return { store, sale, busy, refunding, canRefund, cancel, markReviewed, refunded, share, sms, printTicket, printInvoice, can, money, qty, plural, dateTimeFr, saleNo, MODE_LABEL, TYPE_LABEL, payLabel, reviewText };
   },
   template: `
     <Sheet :title="t('Vente') + ' ' + saleNo(id)" size="wide" @close="$emit('close')">
@@ -176,7 +176,7 @@ export const SaleDetail = {
             <tbody>
               <tr v-for="it in sale.items" :key="it.id">
                 <td class="cell-title">{{ (store.lang === 'ar' && it.name_ar) || it.name }}<div class="cell-sub" v-if="it.returned_qty > 0">{{ t('Retourné') }} : {{ qty(it.returned_qty) }}</div></td>
-                <td><span class="badge" :class="it.sale_type">{{ it.sale_type === 'wholesale' ? t('Gros') : t('Détail') }}</span></td>
+                <td><span class="badge" :class="it.sale_type">{{ t(TYPE_LABEL[it.sale_type] || 'Détail') }}</span></td>
                 <td class="num">{{ qty(it.qty) }} {{ plural(it.unit_label, it.qty) }}</td>
                 <td class="num">{{ money(it.unit_price, { bare: true }) }}<div class="cell-sub" v-if="it.unit_price !== it.list_price">{{ t('au lieu de {p}', { p: money(it.list_price, { bare: true }) }) }}</div></td>
                 <td class="num">{{ money(it.total, { bare: true }) }}</td>
